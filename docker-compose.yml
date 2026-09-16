@@ -1,0 +1,31 @@
+services:
+  waf:
+    build: ./waf/coraza-caddy
+    container_name: coraza-waf
+    ports:
+      - "8080:8080"     #expose port nay ra ngoai
+    networks:
+      - internal
+    depends_on:
+      - juice-shop-waf
+    volumes:
+      - ./coraza-caddy/logs:/var/log/caddy
+      - ./coraza-caddy/Caddyfile:/etc/caddy/Caddyfile
+      - ./coraza-caddy/config:/etc/coraza
+
+  juice-shop-waf:
+    image: bkimminich/juice-shop:latest
+    container_name: juice-shop-waf
+    networks:
+      - internal
+    environment:
+      NODE_ENV: unsafe #co the doi thanh "production"
+    volumes:
+      - juice_data2:/app/data
+
+networks:
+  internal:
+
+volumes:
+  juice_data2:
+    external: true

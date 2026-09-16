@@ -1,0 +1,35 @@
+{
+    order coraza_waf first
+    auto_https off
+    log {
+        output file /var/log/caddy/access.log
+        format json
+    }
+}
+
+:8080 {
+    
+    coraza_waf {
+    	load_owasp_crs
+    	directives `
+    	Include @coraza.conf-recommended
+        Include @crs-setup.conf.example
+	Include /etc/coraza/JuiceSbeforeCRS.conf
+        Include @owasp_crs/*.conf
+        Include /etc/coraza/coraza.conf
+	Include /etc/coraza/JuiceSafterCRS.conf
+        `
+    }
+
+    reverse_proxy juice-shop-waf:3000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote}
+        header_up X-Forwarded-For {remote}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    log {
+        output file /var/log/caddy/access.log
+        format json
+    }
+}
