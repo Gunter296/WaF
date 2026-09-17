@@ -51,12 +51,6 @@ RUN mkdir -p /etc/coraza /var/log/caddy && \
 # Chuyển lại về user caddy chạy container bằng quyền user thường
 USER caddy
 
-# Config (Caddyfile, coraza.conf, crs-setup.conf đặt cùng thư mục với Dockerfile)
-#COPY Caddyfile /etc/caddy/Caddyfile
-#COPY coraza.conf /etc/coraza/coraza.conf
-#COPY crs-setup.conf /etc/coraza/crs/crs-setup.conf
-
-
 EXPOSE 8080
 
 # caddy run --config /etc/caddy/Caddyfile --adapter caddyfile

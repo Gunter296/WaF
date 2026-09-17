@@ -1,13 +1,15 @@
 services:
   waf:
-    build: ./waf/coraza-caddy
+    build: ./coraza-caddy
     container_name: coraza-waf
     ports:
       - "8080:8080"     #expose port nay ra ngoai
     networks:
-      - internal
+      - net_proxy
+      - net_management
     depends_on:
-      - juice-shop-waf
+      juice-shop-waf:
+        condition: service_healthy
     volumes:
       - ./coraza-caddy/logs:/var/log/caddy
       - ./coraza-caddy/Caddyfile:/etc/caddy/Caddyfile
@@ -17,14 +19,61 @@ services:
     image: bkimminich/juice-shop:latest
     container_name: juice-shop-waf
     networks:
-      - internal
+      - net_proxy
+    helathcheck:
+      test: ["CMD", "wget", "-q0-", "http://localhost:3000"]
     environment:
       NODE_ENV: unsafe #co the doi thanh "production"
     volumes:
       - juice_data2:/app/data
 
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: wafdb
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - net_ctrl
+
+  rule-manager:
+    build: ./rule-manager
+    volumes:
+      - ./coraza-caddy/config:/etc/coraza
+    networks:
+      - net_ctrl
+      - net_management
+
+  log-analyzer:
+    build: ./log-analyzer
+    volumes:
+      - ./coraza-caddy/logs:/var/log/caddy
+    networks:
+      - net_ctrl
+
+  admin-api:
+    build: ./admin-api
+    depends_on: 
+      - log-analyzer
+      - rule-manager
+      - postgres
+    networks:
+      - net_edge
+      - net_ctrl
+
+  web-admin:
+    build: ./web-admin
+    ports: "192.168.127.129:443:443"
+    depends_on: admin-api
+    networks: net_edge
+
 networks:
-  internal:
+  net_edge:
+  net_ctrl:
+    internal: true
+  net_management:
+    internal: true
+  net_proxy:
 
 volumes:
   juice_data2:
