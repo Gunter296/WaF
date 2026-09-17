@@ -76,5 +76,6 @@ networks:
   net_proxy:
 
 volumes:
+  pg_data: external: true
   juice_data2:
     external: true
