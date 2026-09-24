@@ -1,0 +1,11 @@
+.venv/
+.uv-cache/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+outputs/
+.mplconfig/
+.test-temp*/
+pytest-cache-files-*/

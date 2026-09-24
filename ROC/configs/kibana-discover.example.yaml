@@ -1,0 +1,64 @@
+# Use a Kibana Discover per-document CSV export, not an aggregated visualization.
+# Mapping values must match the exact exported CSV headers.
+synthetic: false
+input:
+  paths: [../data/kibana-discover-export.csv]
+  format: csv
+output_path: ../outputs/kibana-discover-run
+configuration_id: replace-with-one-waf-configuration
+duplicate_handling: error
+field_mapping:
+  request_id: transaction.id
+  timestamp: '@timestamp'
+  uri: transaction.request.uri
+  inbound_blocking: crs_scores.inbound.blocking
+  inbound_detection: crs_scores.inbound.detection
+  inbound_threshold: crs_scores.inbound.threshold
+  group_id: group_id
+  dataset_source: dataset_source
+  configuration_id: configuration_id
+  run_id: run_id
+features: [inbound_blocking, inbound_detection]
+uri_cve_prefix: true
+# With true, CVE-2021-12345/localhost becomes cve_id=CVE-2021-12345,
+# uri=localhost. Set false to leave the path unchanged.
+export:
+  include_uri: false
+grouping:
+  field: group_id
+  allow_request_fallback: false
+split:
+  test_size: 0.3
+  seed: 42
+baseline:
+  fixed_threshold: null
+  variable_threshold_explanation: null
+fpr_targets: [0.001, 0.005, 0.01]
+search:
+  max_evaluations: 2000
+  seed: 42
+bootstrap:
+  iterations: 1000
+  seed: 42
+  confidence: 0.95
+collection_manifest:
+  coraza_version: fill-from-collection-record
+  connector_version: fill-from-collection-record
+  crs_version: fill-from-collection-record
+  engine_mode: fill-from-collection-record
+  blocking_pl: fill-from-collection-record
+  detection_pl: fill-from-collection-record
+  early_blocking: fill-from-collection-record
+  reporting_level: fill-from-collection-record
+  audit_mode: fill-from-collection-record
+  threshold: fill-from-collection-record
+  exclusions: []
+  body_limits: fill-from-collection-record
+  dataset_version: fill-from-collection-record
+  generator_version: fill-from-collection-record
+  preprocessing: fill-from-collection-record
+  sanitize: fill-from-collection-record
+  inject_id: fill-from-collection-record
+  concurrency: fill-from-collection-record
+  collection_start: fill-from-collection-record
+  collection_end: fill-from-collection-record

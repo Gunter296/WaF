@@ -1,0 +1,76 @@
+# SYNTHETIC data only. FPR targets are experiment parameters, not deployment advice.
+synthetic: true
+input:
+  paths: [../examples/synthetic.jsonl]
+  format: jsonl
+output_path: ../outputs/synthetic-demo
+configuration_id: synthetic-detectiononly
+duplicate_handling: drop_identical
+field_mapping:
+  request_error: request_error
+features: [inbound_blocking, inbound_detection, sqli, xss, rce, high_pl, lfi]
+derived_features:
+  high_pl:
+    sum: [pl3, pl4]
+feature_metadata:
+  high_pl:
+    phase: inbound
+    meaning: Explicit sum of PL3 and PL4; does not change original CRS scores.
+grouping:
+  field: group_id
+  allow_request_fallback: false
+split:
+  test_size: 0.3
+  seed: 42
+baseline:
+  fixed_threshold: null
+  variable_threshold_explanation: null
+fpr_targets: [0.001, 0.005, 0.01]
+search:
+  max_evaluations: 2000
+  seed: 42
+bootstrap:
+  iterations: 500
+  seed: 42
+  confidence: 0.95
+export:
+  include_uri: false
+policy_families:
+  - name: category_or
+    expression:
+      op: or
+      children:
+        - {feature: sqli, parameter: T_sqli}
+        - {feature: xss, parameter: T_xss}
+        - {feature: rce, parameter: T_rce}
+  - name: inbound_pl_category
+    expression:
+      op: or
+      children:
+        - {feature: inbound_blocking, parameter: T_total}
+        - op: and
+          children:
+            - {feature: high_pl, parameter: T_high}
+            - {feature: rce, parameter: T_rce}
+collection_manifest:
+  coraza_version: synthetic-not-run
+  connector_version: synthetic-not-run
+  crs_version: synthetic-not-run
+  engine_mode: DetectionOnly
+  blocking_pl: 1
+  detection_pl: 4
+  early_blocking: false
+  reporting_level: 5
+  audit_mode: 'On'
+  threshold: 5
+  exclusions: []
+  body_limits: synthetic-not-applicable
+  dataset_version: synthetic-v1
+  generator_version: generate_synthetic.py-v1
+  preprocessing: none
+  sanitize: false
+  inject_id: false
+  concurrency: 1
+  collection_start: '2026-01-01T00:00:00Z'
+  collection_end: '2026-01-01T01:00:00Z'
+  attack_category_label_source: Explicit synthetic generator label, not inferred from scores or templates.
