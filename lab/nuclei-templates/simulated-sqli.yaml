@@ -1,0 +1,20 @@
+id: waf-lab-simulated-sqli
+
+info:
+  name: WAF Lab - simulated SQL injection marker
+  author: waf-lab
+  severity: high
+  description: Trigger a lab-only mock search marker; this is not a real CVE or a production SQL injection scanner.
+  tags: sqli,waf-lab,simulation
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/api/lab/search?q=%27%20OR%201%3D1--"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200]
+      - type: word
+        part: body
+        words: ["LAB_SQLI_MARKER"]

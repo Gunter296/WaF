@@ -24,7 +24,7 @@ RUN caddy list-modules | grep -i waf
 # Image Caddy chính thức (Alpine, đã có user caddy, entrypoint chuẩn)
 FROM caddy:${CADDY_VERSION}-alpine
 
-ARG CRS_VERSION
+#ARG CRS_VERSION
 
 # Copy binary đã nhúng Coraza từ stage build (ghi đè binary gốc)
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy

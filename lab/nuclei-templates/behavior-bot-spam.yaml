@@ -1,0 +1,27 @@
+id: waf-lab-bot-spam
+
+info:
+  name: WAF Lab - bot request rate enforcement
+  author: waf-lab
+  severity: info
+  description: Repeats one endpoint with a declared bot User-Agent to verify WAF-side request throttling.
+  tags: behavior,bot,rate-limit,waf-lab
+
+http:
+  - method: GET
+    headers:
+      User-Agent: Googlebot/2.1 (+http://www.google.com/bot.html)
+    path:
+      - "{{BaseURL}}/?bot_spam={{n}}"
+    attack: batteringram
+    payloads:
+      n: ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15", "16"]
+    stop-at-first-match: false
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [429]
+      - type: word
+        part: header
+        words: ["X-WAF-Lab-Rule: bot_request_rate"]
+        case-insensitive: true

@@ -1,0 +1,20 @@
+id: waf-lab-simulated-path
+
+info:
+  name: WAF Lab - traversal marker
+  author: waf-lab
+  severity: medium
+  description: Checks the virtual path traversal fixture; it never reads host files.
+  tags: lfi,path-traversal,waf-lab,simulation
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/api/lab/file?path=../../internal/marker"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200]
+      - type: word
+        part: body
+        words: ["SIMULATED_PATH_TRAVERSAL", "LAB_PATH_MARKER"]

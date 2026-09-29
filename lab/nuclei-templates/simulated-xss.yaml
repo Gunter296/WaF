@@ -1,0 +1,20 @@
+id: waf-lab-simulated-xss
+
+info:
+  name: WAF Lab - reflected XSS marker
+  author: waf-lab
+  severity: medium
+  description: Checks whether the lab-only HTML reflection endpoint returns a harmless unique marker.
+  tags: xss,waf-lab,simulation
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/api/lab/xss?value=%3Csvg%20onload%3Dalert%281%29%3ELAB_XSS_MARKER"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200]
+      - type: word
+        part: body
+        words: ["SIMULATED_XSS", "LAB_XSS_MARKER"]

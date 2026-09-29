@@ -1,0 +1,33 @@
+id: waf-lab-login-behavior
+
+info:
+  name: WAF Lab - failed login behavior response
+  author: waf-lab
+  severity: medium
+  description: Sends six failed demo logins to exercise the local behavior counter.
+  tags: behavior,rate-limit,waf-lab
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}/api/lab/login"
+    headers:
+      Content-Type: application/json
+    body: '{"email":"burst-{{n}}@northstar.test","password":"invalid"}'
+    attack: batteringram
+    payloads:
+      n:
+        - "1"
+        - "2"
+        - "3"
+        - "4"
+        - "5"
+        - "6"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [429]
+      - type: word
+        part: header
+        words: ["X-WAF-Lab-Rule: login_failures"]
+        case-insensitive: true

@@ -1,0 +1,21 @@
+id: waf-lab-country-fixture
+
+info:
+  name: WAF Lab - fake country policy
+  author: waf-lab
+  severity: medium
+  description: Uses the Nuclei-US container IP fixture and requires an explicit geo rule response header.
+  tags: geo,behavior,waf-lab
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [403]
+      - type: word
+        part: header
+        words: ["X-WAF-Lab-Rule: geo_policy"]
+        case-insensitive: true

@@ -1,0 +1,6 @@
+# Opt-in UI replacement; all networks, mounts and environment come from the lab.
+services:
+  portal:
+    build:
+      context: ./portal-ui
+      dockerfile: Dockerfile

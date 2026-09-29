@@ -1,0 +1,23 @@
+id: waf-lab-simulated-upload
+
+info:
+  name: WAF Lab - fake upload validation
+  author: waf-lab
+  severity: medium
+  description: Exercises a JSON filename fixture; the app does not write files to disk.
+  tags: upload,waf-lab,simulation
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}/api/lab/upload"
+    headers:
+      Content-Type: application/json
+    body: '{"name":"lab-probe.exe"}'
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200]
+      - type: word
+        part: body
+        words: ["SIMULATED_UPLOAD", "accepted_by_demo"]

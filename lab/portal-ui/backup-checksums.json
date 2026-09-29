@@ -1,0 +1,34 @@
+[
+  {
+    "Path": "E:\\Doc\\Doc\\Code\\VDT2\\WaF\\lab\\portal\\automation.mjs",
+    "Hash": "E844F08F3C9F137265C74F6E3AAD0AAFA479C79BA90A885B2FFE4C38F002EAC0"
+  },
+  {
+    "Path": "E:\\Doc\\Doc\\Code\\VDT2\\WaF\\lab\\portal\\automation.test.mjs",
+    "Hash": "A85B3D8FA06566C92E37C16355049B6119CA71A58E9D8B79C94D4333675CC049"
+  },
+  {
+    "Path": "E:\\Doc\\Doc\\Code\\VDT2\\WaF\\lab\\portal\\Dockerfile",
+    "Hash": "C04AFB721975579790EEDB37F28288E8D32263B021BFE2F21A77E5BE6764B56A"
+  },
+  {
+    "Path": "E:\\Doc\\Doc\\Code\\VDT2\\WaF\\lab\\portal\\index.html",
+    "Hash": "32C3D3366CFEFE74FB9FEE2C1F9E78F76634513D03891179B861ED35A9B29106"
+  },
+  {
+    "Path": "E:\\Doc\\Doc\\Code\\VDT2\\WaF\\lab\\portal\\package.json",
+    "Hash": "A67C9745B0FE06048FBAE94A6A3E1A3D700C90D553C96961092FC0BCC3DA2E6A"
+  },
+  {
+    "Path": "E:\\Doc\\Doc\\Code\\VDT2\\WaF\\lab\\portal\\server.mjs",
+    "Hash": "9621E2A921E9F205D722ED9FF87FC2E4A097EA1A795D62461656844522D57095"
+  },
+  {
+    "Path": "E:\\Doc\\Doc\\Code\\VDT2\\WaF\\lab\\portal\\tuning.mjs",
+    "Hash": "64754B2D21D8FCD9E98B6DDBEAFE57D430EFE5DEBC51FF7CA6646AF8B076A1B3"
+  },
+  {
+    "Path": "E:\\Doc\\Doc\\Code\\VDT2\\WaF\\lab\\portal\\tuning.test.mjs",
+    "Hash": "86C0F50810C6FE5B73EEE5BBC2AB2107D2D5085DE733E02BF962049143BA279A"
+  }
+]

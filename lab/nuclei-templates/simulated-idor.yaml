@@ -1,0 +1,20 @@
+id: waf-lab-simulated-idor
+
+info:
+  name: WAF Lab - cross-account fake statement
+  author: waf-lab
+  severity: medium
+  description: Checks the intentionally unowned fake statement endpoint.
+  tags: idor,waf-lab,simulation
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/api/lab/documents/1002"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200]
+      - type: word
+        part: body
+        words: ["SIMULATED_IDOR", "LAB_FAKE_STATEMENT"]

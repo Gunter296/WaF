@@ -1,0 +1,46 @@
+{
+  "version": 0,
+  "enabled": true,
+  "mode": "On",
+  "blocking_pl": 1,
+  "detection_pl": 2,
+  "cve_rules": { "CVE-2026-64642": false, "CVE-2026-64645": false },
+  "crs_exclusions": { "sqli_search": false },
+  "tuning_rules": [],
+  "automation": {
+    "mode": "manual",
+    "target_pl": 2,
+    "flow_test_passed": false,
+    "auto_exceptions": false,
+    "approved_paths": [],
+    "last_change_at": null,
+    "transition": null
+  },
+  "rate_limit": {
+    "enabled": true,
+    "requests": 30,
+    "window_seconds": 10,
+    "range_requests": 120,
+    "range_window_seconds": 10,
+    "prefix_v4": 32,
+    "prefix_v6": 128,
+    "range_prefix_v4": 24,
+    "range_prefix_v6": 64
+  },
+  "geo": {
+    "enabled": false,
+    "deny": [],
+    "allow": [],
+    "fixtures": {
+      "172.30.0.10": "VN",
+      "172.30.0.20": "US"
+    }
+  },
+  "ip_policy": { "enabled": false, "deny": [], "allow": [] },
+  "bot_detection": { "enabled": true, "unique_paths": 8, "window_seconds": 30, "spam_requests": 10, "spam_window_seconds": 10, "action": "observe" },
+  "behavior": {
+    "login_failures": { "enabled": true, "limit": 5, "window_seconds": 60, "action": "block" },
+    "not_found_burst": { "enabled": true, "limit": 15, "window_seconds": 30, "action": "observe" },
+    "sequential_documents": { "enabled": true, "limit": 4, "window_seconds": 30, "action": "observe" }
+  }
+}

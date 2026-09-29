@@ -1,0 +1,286 @@
+name: waf-finance-lab
+
+services:
+  edge:
+    image: haproxy:3.2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./edge/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./runtime/logs:/var/log/lab
+    networks:
+      frontend:
+        ipv4_address: 172.30.0.2
+      logging: {}
+    depends_on:
+      waf:
+        condition: service_healthy
+      finance-vulnerable:
+        condition: service_healthy
+      finance-patched:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+      filebeat:
+        condition: service_started
+
+  waf:
+    build:
+      context: ./waf
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose: ["8080"]
+    volumes:
+      - ./waf/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./waf/config:/etc/coraza-lab:ro
+      - ./runtime/tuning:/etc/coraza-tuning:ro
+      - ./runtime/logs:/var/log/lab
+      - ./runtime/policy:/etc/waf-lab:ro
+    networks:
+      frontend:
+        ipv4_address: 172.30.0.3
+      logging: {}
+      management:
+        ipv4_address: 172.31.0.3
+    depends_on:
+      finance-vulnerable:
+        condition: service_healthy
+      finance-patched:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 2s
+      retries: 3
+      start_period: 15s
+
+  finance-vulnerable:
+    build:
+      context: ./finance
+      args:
+        NEXT_VERSION: 16.2.10
+    restart: unless-stopped
+    environment:
+      LAB_BUILD: vulnerable
+      LAB_LOG_FILE: /var/log/lab/finance-vulnerable.jsonl
+      CANARY_URL: http://canary/marker
+    expose: ["3000"]
+    volumes:
+      - ./runtime/logs:/var/log/lab
+    networks: [frontend, logging]
+    depends_on:
+      canary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  finance-patched:
+    build:
+      context: ./finance
+      args:
+        NEXT_VERSION: 16.2.11
+    restart: unless-stopped
+    environment:
+      LAB_BUILD: patched
+      LAB_LOG_FILE: /var/log/lab/finance-patched.jsonl
+      CANARY_URL: http://canary/marker
+    expose: ["3000"]
+    volumes:
+      - ./runtime/logs:/var/log/lab
+    networks: [frontend, logging]
+    depends_on:
+      canary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  portal:
+    build: ./portal
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8090:8090"
+    environment:
+      PORT: 8090
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: waflab
+      PGUSER: waflab
+      PGPASSWORD: ${LAB_DB_PASSWORD:-local-lab-only}
+      POLICY_FILE: /shared/policy.json
+      TUNING_FILE: /tuning/tuning.conf
+      CADDYFILE: /waf/Caddyfile
+      CADDY_ADMIN_URL: http://172.31.0.3:2019
+      LAB_AUTOMATION_TOKEN: ${LAB_AUTOMATION_TOKEN:-local-learning-worker-token}
+      LAB_LOG_FILE: /var/log/lab/portal.jsonl
+    volumes:
+      - ./runtime/policy:/shared
+      - ./runtime/tuning:/tuning
+      - ./waf/Caddyfile:/waf/Caddyfile:ro
+      - ./runtime/logs:/var/log/lab
+    networks: [management, automation, appdata, logging]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16.10-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: waflab
+      POSTGRES_USER: waflab
+      POSTGRES_PASSWORD: ${LAB_DB_PASSWORD:-local-lab-only}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [appdata]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U waflab -d waflab"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.3.1
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      xpack.ml.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    ports:
+      - "127.0.0.1:9200:9200"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    networks: [observability]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9200/_cluster/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:9.3.1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5601:5601"
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+      TELEMETRY_ENABLED: "false"
+      XPACK_SECURITY_ENABLED: "false"
+    networks: [observability, logging]
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:9.3.1
+    user: root
+    command: ["filebeat", "-e", "--strict.perms=false"]
+    restart: unless-stopped
+    volumes:
+      - ./observability/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ./runtime/logs:/var/log/lab:ro
+      - ./runtime/results:/var/log/nuclei:ro
+      - filebeatdata:/usr/share/filebeat/data
+    networks: [logging, observability]
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  learning-worker:
+    build: ./learning-worker
+    restart: unless-stopped
+    environment:
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      PORTAL_URL: http://portal:8090
+      LAB_AUTOMATION_TOKEN: ${LAB_AUTOMATION_TOKEN:-local-learning-worker-token}
+      POLL_SECONDS: 60
+    networks: [automation, observability]
+    depends_on:
+      portal:
+        condition: service_started
+      elasticsearch:
+        condition: service_healthy
+
+  canary:
+    image: nginx:1.29.3-alpine
+    restart: unless-stopped
+    expose: ["80"]
+    volumes:
+      - ./canary/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./canary/marker.txt:/usr/share/nginx/html/marker:ro
+    networks: [frontend]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/marker"]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+
+  mailpit:
+    image: axllent/mailpit:v1.27.8
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8025:8025"
+    expose: ["1025"]
+    networks: [logging]
+
+  nuclei:
+    image: projectdiscovery/nuclei:v3.4.10
+    profiles: [scanner]
+    entrypoint: ["nuclei"]
+    volumes:
+      - ./nuclei-templates:/templates:ro
+      - ./runtime/results:/results
+    networks:
+      frontend:
+        ipv4_address: 172.30.0.10
+      logging: {}
+    depends_on:
+      edge:
+        condition: service_started
+
+  nuclei-us:
+    image: projectdiscovery/nuclei:v3.4.10
+    profiles: [scanner]
+    entrypoint: ["nuclei"]
+    volumes:
+      - ./nuclei-templates:/templates:ro
+      - ./runtime/results:/results
+    networks:
+      frontend:
+        ipv4_address: 172.30.0.20
+      logging: {}
+    depends_on:
+      edge:
+        condition: service_started
+
+networks:
+  frontend:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+  management:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.31.0.0/24
+  automation:
+    internal: true
+  appdata:
+    internal: true
+  observability:
+    internal: true
+  logging:
+    internal: true
+
+volumes:
+  pgdata:
+  esdata:
+  filebeatdata:

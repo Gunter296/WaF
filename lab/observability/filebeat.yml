@@ -1,0 +1,36 @@
+filebeat.inputs:
+  - type: filestream
+    id: waf-lab-json-files
+    paths:
+      - /var/log/lab/*.jsonl
+      - /var/log/nuclei/*.jsonl
+    prospector.scanner.check_interval: 2s
+    parsers:
+      - ndjson:
+          target: ""
+          add_error_key: true
+          overwrite_keys: true
+
+  - type: udp
+    host: "0.0.0.0:5140"
+    max_message_size: 10KiB
+    codec: json
+
+processors:
+  - add_fields:
+      target: lab
+      fields:
+        stack: finance-waf-lab
+  - add_host_metadata: ~
+
+setup.ilm.enabled: false
+setup.template.enabled: true
+setup.template.name: waf-lab
+setup.template.pattern: waf-lab-*
+
+output.elasticsearch:
+  hosts: ["http://elasticsearch:9200"]
+  index: "waf-lab-%{+yyyy.MM.dd}"
+
+logging.level: info
+logging.to_stderr: true

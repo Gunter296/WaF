@@ -1,0 +1,31 @@
+id: waf-lab-bot-declared-fanout
+
+info:
+  name: WAF Lab - declared bot with path fanout
+  author: waf-lab
+  severity: info
+  description: Checks the combined User-Agent and distinct-path policy on the local lab WAF.
+  tags: behavior,bot,waf-lab
+
+http:
+  - method: GET
+    headers:
+      User-Agent: Googlebot/2.1 (+http://www.google.com/bot.html)
+    path:
+      - "{{BaseURL}}/bot-probe-01"
+      - "{{BaseURL}}/bot-probe-02"
+      - "{{BaseURL}}/bot-probe-03"
+      - "{{BaseURL}}/bot-probe-04"
+      - "{{BaseURL}}/bot-probe-05"
+      - "{{BaseURL}}/bot-probe-06"
+      - "{{BaseURL}}/bot-probe-07"
+      - "{{BaseURL}}/bot-probe-08"
+    stop-at-first-match: false
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [403]
+      - type: word
+        part: header
+        words: ["X-WAF-Lab-Rule: bot_declared_fanout"]
+        case-insensitive: true

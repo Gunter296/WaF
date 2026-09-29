@@ -1,0 +1,48 @@
+{
+    auto_https off
+    order lab_policy before reverse_proxy
+    admin 172.31.0.3:2019
+}
+
+:8080 {
+    @health path /healthz
+    respond @health "ok" 200
+
+    log {
+        output file /var/log/lab/waf-access.jsonl
+        format json
+    }
+
+    route {
+        lab_policy /etc/waf-lab/policy.json
+        coraza_waf {
+            load_owasp_crs
+            tx_id_req_header "X-Request-ID"
+            directives `
+                Include @coraza.conf-recommended
+                Include @crs-setup.conf.example
+                Include /etc/coraza-lab/coraza.conf
+                Include /etc/coraza-lab/lab-rules.conf
+                Include /etc/coraza-tuning/tuning.conf
+                Include @owasp_crs/*.conf
+            `
+        }
+        @patched host patched.localhost patched.localhost:8080
+        reverse_proxy @patched finance-patched:3000 {
+            header_up -X-Lab-Mode
+            header_up -X-Lab-Blocking-PL
+            header_up -X-Lab-Detection-PL
+            header_up -X-Lab-CVE-64642
+            header_up -X-Lab-CVE-64645
+            header_up -X-Lab-Exclude-SQLi-942100
+        }
+        reverse_proxy finance-vulnerable:3000 {
+            header_up -X-Lab-Mode
+            header_up -X-Lab-Blocking-PL
+            header_up -X-Lab-Detection-PL
+            header_up -X-Lab-CVE-64642
+            header_up -X-Lab-CVE-64645
+            header_up -X-Lab-Exclude-SQLi-942100
+        }
+    }
+}

@@ -1,0 +1,23 @@
+id: waf-lab-simulated-csrf
+
+info:
+  name: WAF Lab - fake transfer without CSRF token
+  author: waf-lab
+  severity: medium
+  description: Posts only fake transfer data and checks for the lab marker. No account or payment is changed.
+  tags: csrf,waf-lab,simulation
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}/api/lab/transfer"
+    headers:
+      Content-Type: application/json
+    body: '{"recipient":"DEMO-0002","amount":1}'
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200]
+      - type: word
+        part: body
+        words: ["SIMULATED_CSRF", "LAB-TX-0001"]

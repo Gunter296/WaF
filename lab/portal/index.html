@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="vi">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Learning và tuning · WAF Lab</title>
+<style>
+  *{box-sizing:border-box}body{font:14px system-ui,sans-serif;background:#f4f7f4;color:#18372f;margin:0}.wrap{max-width:1100px;margin:auto;padding:28px 16px}a{color:#0e654f}.card{background:#fff;border:1px solid #dfe9e2;border-radius:10px;padding:20px;margin:16px 0}h1{font-size:25px}h2{font-size:18px}p{line-height:1.55}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}label{display:block;font-size:12px;font-weight:600;margin:10px 0}input,select,textarea{width:100%;padding:10px;margin-top:5px;border:1px solid #cddbd2;border-radius:5px;font:inherit}input[type=checkbox]{width:auto}button{background:#0e654f;color:#fff;border:0;border-radius:5px;padding:10px 14px;cursor:pointer;margin:4px 4px 4px 0}.danger{background:#a94442}.muted{color:#60756a;font-size:12px}.status{padding:10px;border-radius:5px;background:#e7f1e9}table{border-collapse:collapse;width:100%}td,th{padding:8px;text-align:left;border-bottom:1px solid #e0e8e1;vertical-align:top}code{word-break:break-all}@media(max-width:720px){.grid{grid-template-columns:1fr}table{display:block;overflow:auto}}
+</style>
+<div class="wrap">
+  <a href="/">← Portal</a><h1>Learning và tuning CRS</h1>
+  <p>Portal lưu ngoại lệ trong PostgreSQL, sinh SecRule có phạm vi hẹp rồi yêu cầu Caddy nạp lại. Learning worker đọc sự kiện Elasticsearch để đưa ứng viên cho người quản trị đánh giá. HTTP 2xx không tự chứng minh false positive.</p>
+  <div id="status" class="status">Đang tải…</div>
+  <p id="workerStatus" class="muted"></p>
+
+  <section class="card"><h2>Bot detection · User-Agent và hành vi</h2>
+    <p>Thư viện nguồn mở phân loại User-Agent tự khai báo. WAF giới hạn số request của bot theo IP, kể cả khi bot lặp cùng một URL; đồng thời nhận diện quét nhiều đường dẫn. User-Agent có thể giả mạo; chế độ quan sát là mặc định.</p>
+    <label><input id="botEnabled" type="checkbox"> Bật nhận diện bot</label>
+    <div class="grid">
+      <label>Số đường dẫn khác nhau<input id="botPaths" type="number" min="3" max="100"></label>
+      <label>Cửa sổ (giây)<input id="botWindow" type="number" min="1" max="3600"></label>
+      <label>Số request bot cho phép trong cửa sổ<input id="botSpamRequests" type="number" min="1" max="10000"></label>
+      <label>Cửa sổ giới hạn bot (giây)<input id="botSpamWindow" type="number" min="1" max="3600"></label>
+      <label>Hành động<select id="botAction"><option value="observe">Quan sát</option><option value="block">Chặn khi WAF ở On</option></select></label>
+    </div>
+    <button id="saveBot">Lưu bot detection</button><span id="botResult"></span>
+  </section>
+
+  <section class="card"><h2>Chế độ automation · finance dễ tổn thương</h2>
+    <div class="grid">
+      <label>Chế độ<select id="mode"><option value="manual">Manual · chỉ đề xuất</option><option value="automatic">Automatic · áp dụng khi đủ điều kiện</option></select></label>
+      <label>PL mục tiêu<select id="target"><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+    </div>
+    <label><input id="flow" type="checkbox"> Admin xác nhận bài kiểm thử luồng hợp lệ đã đạt</label>
+    <label><input id="autoExceptions" type="checkbox"> Cho phép ngoại lệ tham số tự động sau khi admin xác nhận false positive</label>
+    <label>Endpoint cho phép ngoại lệ tự động, mỗi dòng một đường dẫn chính xác<textarea id="paths" rows="3" placeholder="/api/lab/search"></textarea></label>
+    <p class="muted">Nâng PL tự động đòi 7 ngày và 10.000 request kể từ bước trước, không có false positive nghiêm trọng đang chờ. Sau thay đổi theo dõi 15 phút và rollback nếu tỉ lệ lỗi/chặn tăng mạnh. Ngoại lệ tự động chỉ áp dụng cho tham số, tối đa 24 giờ; ngoại lệ cả rule do admin tạo thủ công.</p>
+    <button id="saveAuto">Lưu automation</button><span id="autoResult"></span>
+  </section>
+
+  <section class="card"><h2>Thêm ngoại lệ CRS thủ công</h2>
+    <div class="grid">
+      <label>Website<select id="site"><option value="finance-vulnerable">Finance dễ tổn thương</option><option value="finance-patched">Finance đã vá</option></select></label>
+      <label>CRS rule ID<input id="ruleId" type="number" min="900000" max="999999" value="942100"></label>
+      <label>Method<select id="method"><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option></select></label>
+      <label>Đường dẫn chính xác<input id="path" value="/api/lab/search"></label>
+      <label>Phạm vi<select id="scope"><option value="target">Chỉ tham số/header</option><option value="rule">Toàn bộ rule trên method + route</option></select></label>
+      <label>Target, ví dụ ARGS:q<input id="targetField" value="ARGS:q"></label>
+      <label>Hết hạn<input id="expiry" type="datetime-local"></label>
+    </div>
+    <label>Lý do và bằng chứng xác nhận<input id="reason" placeholder="False positive đã được xác nhận bằng bài kiểm thử ứng dụng"></label>
+    <button id="addTuning">Thêm, validate và áp dụng</button><span id="tuningResult"></span>
+    <h3>Rule đang quản lý</h3><div id="tuningList"></div>
+  </section>
+
+  <section class="card"><h2>Ứng viên từ learning worker</h2>
+    <p class="muted">Nhóm theo rule ID, PL, method, route và tham số. “Confirmed FP” chỉ nên chọn sau khi đối chiếu request ID, log ứng dụng và bài kiểm thử hợp lệ. Các dòng ở PL cao hơn cho biết số request dự kiến chịu ảnh hưởng nếu nâng Blocking PL.</p>
+    <div id="learningList">Chưa có dữ liệu.</div>
+  </section>
+</div>
+<script>
+let policy;
+const $ = (id) => document.getElementById(id);
+const text = (s) => document.createTextNode(String(s ?? ""));
+function node(tag, value) { const el=document.createElement(tag); el.append(text(value)); return el; }
+function setStatus(id, message) { $(id).textContent=message; }
+async function request(url, options) { const r=await fetch(url, options); const data=await r.json(); if(!r.ok) throw new Error(data.error||r.statusText); return data; }
+async function savePolicy() { policy=await request('/api/policy',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(policy)}); renderPolicy(); }
+function renderPolicy() {
+  $('botEnabled').checked=policy.bot_detection.enabled;
+  $('botPaths').value=policy.bot_detection.unique_paths;
+  $('botWindow').value=policy.bot_detection.window_seconds;
+  $('botSpamRequests').value=policy.bot_detection.spam_requests;
+  $('botSpamWindow').value=policy.bot_detection.spam_window_seconds;
+  $('botAction').value=policy.bot_detection.action;
+  $('mode').value=policy.automation.mode; $('target').value=policy.automation.target_pl;
+  $('flow').checked=policy.automation.flow_test_passed; $('autoExceptions').checked=policy.automation.auto_exceptions;
+  $('paths').value=(policy.automation.approved_paths||[]).join('\n');
+  const table=document.createElement('table'); const head=document.createElement('tr');
+  for(const h of ['Rule','Phạm vi','Lý do','Hết hạn','']) head.append(node('th',h)); table.append(head);
+  for(const rule of policy.tuning_rules||[]) {
+    const tr=document.createElement('tr');
+    for(const value of [rule.rule_id,`${rule.site} · ${rule.method} ${rule.path} · ${rule.scope==='target'?rule.target:'toàn rule'}`,rule.reason,rule.expires_at]) tr.append(node('td',value));
+    const td=document.createElement('td'); const button=node('button','Thu hồi'); button.className='danger';
+    button.onclick=async()=>{try{policy.tuning_rules=policy.tuning_rules.filter(x=>x.id!==rule.id);await savePolicy();setStatus('tuningResult','Đã thu hồi và reload WAF.')}catch(e){setStatus('tuningResult',e.message);await load();}};
+    td.append(button);tr.append(td);table.append(tr);
+  }
+  $('tuningList').replaceChildren(table);
+}
+async function load() { const data=await request('/api/policy'); policy=data.document; renderPolicy(); setStatus('status','Policy được tải từ portal.'); await loadLearning(); const health=await request('/api/automation/status');setStatus('workerStatus',`Learning worker: ${health.worker_last_seen||'chưa có heartbeat'} · Mode: ${health.automation.mode}`); }
+async function loadLearning() {
+  const items=await request('/api/learning'); const table=document.createElement('table'); const head=document.createElement('tr');
+  for(const h of ['Rule / PL','Method / route / tham số','Bằng chứng','Trạng thái','Đánh nhãn']) head.append(node('th',h));table.append(head);
+  for(const item of items) {
+    const d=item.document; const tr=document.createElement('tr');
+    for(const value of [`${d.rule_id} / PL${d.pl}`,`${d.site} · ${d.method} ${d.path} · ${d.parameter||'—'}`,`${d.count} request, ${d.days} ngày; PL cao hơn: ${d.estimated_blocks}; ${d.first_seen||''} → ${d.last_seen||''}; ID: ${(d.sample_request_ids||[]).join(', ')}`,`${item.status}${item.review_note?' · '+item.review_note:''}`]) tr.append(node('td',value));
+    const td=document.createElement('td');
+    for(const [status,label] of [['confirmed_fp','Xác nhận FP'],['needs_review','Cần xem'],['dismissed','Bỏ qua']]) {
+      const button=node('button',label);button.onclick=async()=>{try{const evidence=status==='confirmed_fp'?window.prompt('Ghi request ID, bài kiểm thử ứng dụng và lý do đây là false positive:',''):'';if(status==='confirmed_fp'&&evidence===null)return;await request(`/api/learning/${item.key}/label`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({status,evidence})});await loadLearning();}catch(e){setStatus('status',e.message);}};td.append(button);
+    }
+    tr.append(td);table.append(tr);
+  }
+  $('learningList').replaceChildren(table);
+}
+$('saveAuto').onclick=async()=>{try{policy.automation={...policy.automation,mode:$('mode').value,target_pl:Number($('target').value),flow_test_passed:$('flow').checked,auto_exceptions:$('autoExceptions').checked,approved_paths:$('paths').value.split('\n').map(x=>x.trim()).filter(Boolean)};await savePolicy();setStatus('autoResult','Đã lưu.')}catch(e){setStatus('autoResult',e.message);await load();}};
+$('saveBot').onclick=async()=>{try{policy.bot_detection={enabled:$('botEnabled').checked,unique_paths:Number($('botPaths').value),window_seconds:Number($('botWindow').value),spam_requests:Number($('botSpamRequests').value),spam_window_seconds:Number($('botSpamWindow').value),action:$('botAction').value};await savePolicy();setStatus('botResult','Đã lưu policy bot.')}catch(e){setStatus('botResult',e.message);await load();}};
+$('addTuning').onclick=async()=>{try{
+  const expiry=new Date($('expiry').value);if(!Number.isFinite(expiry.getTime())) throw new Error('Chọn thời hạn hợp lệ.');
+  if(expiry<=new Date()) throw new Error('Thời hạn phải ở tương lai.');
+  const scope=$('scope').value;
+  policy.tuning_rules=[...(policy.tuning_rules||[]),{id:crypto.randomUUID(),site:$('site').value,rule_id:Number($('ruleId').value),method:$('method').value,path:$('path').value,scope,target:scope==='target'?$('targetField').value:'',reason:$('reason').value,expires_at:expiry.toISOString()}];
+  await savePolicy();setStatus('tuningResult','Đã áp dụng rule và reload WAF.');
+}catch(e){setStatus('tuningResult',e.message);await load();}};
+load().catch(e=>setStatus('status',e.message));
+</script>
+</html>

@@ -1,0 +1,60 @@
+id: waf-lab-cidr-rate-limit
+
+info:
+  name: WAF Lab - request rate policy
+  author: waf-lab
+  severity: medium
+  description: Sends a bounded local burst to verify the configured per-IP rate limit.
+  tags: behavior,rate-limit,waf-lab
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/?lab_probe={{n}}"
+    attack: batteringram
+    payloads:
+      n:
+        - "01"
+        - "02"
+        - "03"
+        - "04"
+        - "05"
+        - "06"
+        - "07"
+        - "08"
+        - "09"
+        - "10"
+        - "11"
+        - "12"
+        - "13"
+        - "14"
+        - "15"
+        - "16"
+        - "17"
+        - "18"
+        - "19"
+        - "20"
+        - "21"
+        - "22"
+        - "23"
+        - "24"
+        - "25"
+        - "26"
+        - "27"
+        - "28"
+        - "29"
+        - "30"
+        - "31"
+        - "32"
+        - "33"
+        - "34"
+        - "35"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [429]
+      - type: word
+        part: header
+        words: ["X-WAF-Lab-Rule: rate_limit", "X-WAF-Lab-Rule: cidr_rate_limit"]
+        condition: or
+        case-insensitive: true
