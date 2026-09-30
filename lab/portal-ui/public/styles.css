@@ -88,7 +88,13 @@ button.small {
     padding: 27px 16px;
     display: flex;
     flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
     z-index: 20
+}
+
+#sidebar > * {
+    flex-shrink: 0
 }
 
 .brand {

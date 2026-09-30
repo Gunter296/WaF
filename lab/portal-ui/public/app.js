@@ -24,6 +24,11 @@ try {
 document.documentElement.dataset.theme = theme;
 let policy, saved, learning = [],
     health = {},
+    logs = [],
+    logsLoading = false,
+    logsError = '',
+    logQuery = '',
+    logDataset = 'all',
     dirty = false,
     busy = false,
     page = 1,
@@ -36,7 +41,8 @@ const routes = {
     bots: ['◎', 'Bot & hành vi', 'Bot & hành vi bất thường', 'Phân loại User-Agent, giới hạn lưu lượng và xử lý hành vi theo IP.'],
     access: ['⊞', 'IP & quốc gia', 'Kiểm soát IP & quốc gia', 'Quản lý IP, CIDR và dữ liệu quốc gia mô phỏng của lab.'],
     tuning: ['≋', 'Tuning rules', 'Tuning & ngoại lệ CRS', 'Ngoại lệ giới hạn theo website, rule, method, đường dẫn và tham số.'],
-    automation: ['⟳', 'Learning & automation', 'Learning & automation', 'Duyệt bằng chứng và kiểm soát điều kiện thay đổi policy tự động.']
+    automation: ['⟳', 'Learning & automation', 'Learning & automation', 'Duyệt bằng chứng và kiểm soát điều kiện thay đổi policy tự động.'],
+    logs: ['≡', 'Nhật ký', 'Nhật ký hoạt động', '100 sự kiện mới nhất do Filebeat gửi tới Elasticsearch.']
 };
 const currentRoute = () => Object.hasOwn(routes, location.hash.slice(1)) ? location.hash.slice(1) : 'overview';
 const get = (obj, path) => path.split('.').reduce((o, k) => o?.[k], obj);
@@ -91,6 +97,7 @@ async function load() {
         $('#connection').className = 'badge';
         $('#updated').textContent = `Đồng bộ lúc ${new Date().toLocaleTimeString('vi-VN')} · Policy v${policy.version}`;
         render();
+        if (currentRoute() === 'logs') await loadLogs();
     } catch (e) {
         $('#connection').textContent = 'Mất kết nối API';
         $('#connection').className = 'badge red';
@@ -98,6 +105,19 @@ async function load() {
         if (!policy) $('#content').innerHTML = '<div class="panel empty">Chưa có dữ liệu từ portal.<br>Nhấn Làm mới sau khi dịch vụ hoạt động.</div>';
     } finally {
         $('#refresh').disabled = false;
+    }
+}
+async function loadLogs() {
+    logsLoading = true;
+    logsError = '';
+    if (currentRoute() === 'logs') render();
+    try {
+        logs = preview ? [] : await api('/api/logs');
+    } catch (error) {
+        logsError = error.message;
+    } finally {
+        logsLoading = false;
+        if (currentRoute() === 'logs') render();
     }
 }
 async function save() {
@@ -161,7 +181,8 @@ function render() {
     $('#crumb').textContent = config[1];
     $('#page-title').textContent = config[2];
     $('#page-description').textContent = config[3];
-    $('#navigation').innerHTML = Object.entries(routes).map(([key, r]) => `<a class="nav-item ${key===route?'active':''}" href="#${key}" ${key===route?'aria-current="page"':''}><span>${r[0]}</span>${r[1]}${key==='findings'&&learning.length?`<span class="nav-count">${learning.length}</span>`:''}</a>`).join('');
+    $('#navigation').innerHTML = Object.entries(routes).filter(([key]) => key !== 'logs').map(([key, r]) => `<a class="nav-item ${key===route?'active':''}" href="#${key}" ${key===route?'aria-current="page"':''}><span>${r[0]}</span>${r[1]}${key==='findings'&&learning.length?`<span class="nav-count">${learning.length}</span>`:''}</a>`).join('');
+    $('#observability-navigation').innerHTML = `<a class="nav-item ${route==='logs'?'active':''}" href="#logs" ${route==='logs'?'aria-current="page"':''}><span>≡</span>Nhật ký</a>`;
     if (!policy) return;
     const renderers = {
         overview: overview,
@@ -170,7 +191,8 @@ function render() {
         bots: botsView,
         access: accessView,
         tuning: tuningView,
-        automation: automationView
+        automation: automationView,
+        logs: logsView
     };
     $('#content').innerHTML = renderers[route]();
     markDirty();
@@ -246,6 +268,28 @@ function findings() {
     const pages = Math.max(1, Math.ceil(all.length / 10));
     page = Math.min(page, pages);
     return `<div class="toolbar"><input id="search" type="search" aria-label="Tìm ứng viên" placeholder="Tìm rule ID, endpoint, request ID…" value="${esc(search)}"><select id="filter" aria-label="Lọc trạng thái">${['all','candidate','needs_review','confirmed_fp','dismissed','auto_applied'].map(s=>`<option ${filter===s?'selected':''}>${s}</option>`).join('')}</select><button data-action="export">↓ Xuất JSON</button></div><section class="panel"><div class="panel-head"><h2>Ứng viên learning <span class="subtle">/ ${all.length}</span></h2><small>Dữ liệu hiện có · không phải luồng log trực tiếp</small></div>${learningTable(all.slice((page-1)*10,page*10))}<div class="table-footer"><span>${all.length} kết quả · Tối đa 200 ứng viên từ API</span><div class="action-row"><button data-action="prev" ${page===1?'disabled':''}>←</button><span>${page} / ${pages}</span><button data-action="next" ${page===pages?'disabled':''}>→</button></div></div></section>`;
+}
+
+function logRows() {
+    if (logsLoading) return '<section class="panel empty">Đang tải nhật ký…</section>';
+    if (logsError) return `<section class="panel empty">Không tải được nhật ký: ${esc(logsError)}</section>`;
+    const visible = logs.filter(row =>
+        (logDataset === 'all' || row?.event?.dataset === logDataset) &&
+        JSON.stringify(row || {}).toLowerCase().includes(logQuery.toLowerCase())
+    );
+    if (!visible.length) return '<section class="panel empty">Chưa có sự kiện phù hợp. Hãy tạo một request qua WAF rồi nhấn Làm mới.</section>';
+    return `<section class="panel"><div class="panel-head"><h2>Sự kiện gần đây <span class="subtle">/ ${visible.length}</span></h2><small>100 bản ghi mới nhất · lọc trong danh sách này</small></div><div class="table-wrap"><table><thead><tr><th>THỜI GIAN</th><th>NGUỒN</th><th>SỰ KIỆN</th><th>ĐƯỜNG DẪN / IP</th><th>HTTP</th><th>CHI TIẾT</th></tr></thead><tbody>${visible.map(row => {
+        const path = row?.url?.path || row?.lab?.path || '';
+        const ip = row?.source?.ip || row?.client?.ip || '';
+        const event = row?.event?.action || row?.message || row?.rule?.id || 'request';
+        const status = row?.http?.response?.status_code;
+        return `<tr><td>${esc(date(row?.['@timestamp']))}</td><td>${esc(row?.event?.dataset || 'khác')}</td><td>${esc(event)}</td><td><span class="mono">${esc(path)}</span><br><span class="subtle">${esc(ip)}</span></td><td>${esc(status ?? '—')}</td><td><details class="json-details"><summary>Xem JSON</summary><pre>${esc(JSON.stringify(row, null, 2))}</pre></details></td></tr>`;
+    }).join('')}</tbody></table></div></section>`;
+}
+
+function logsView() {
+    const datasets = [...new Set(logs.map(row => row?.event?.dataset).filter(Boolean))].sort();
+    return `<div class="toolbar"><input id="log-search" type="search" aria-label="Tìm trong nhật ký" placeholder="Tìm request ID, IP, rule, đường dẫn…" value="${esc(logQuery)}"><select id="log-dataset" aria-label="Lọc nguồn nhật ký"><option value="all">Tất cả nguồn</option>${datasets.map(dataset => `<option value="${esc(dataset)}" ${logDataset===dataset?'selected':''}>${esc(dataset)}</option>`).join('')}</select></div>${logRows()}`;
 }
 
 function dialog(title, html, onSubmit) {
@@ -356,6 +400,10 @@ $('#content').addEventListener('change', e => {
         page = 1;
         render();
     }
+    if (t.id === 'log-dataset') {
+        logDataset = t.value;
+        $('#content > .panel').outerHTML = logRows();
+    }
 });
 $('#content').addEventListener('input', e => {
     if (e.target.id === 'search') {
@@ -364,6 +412,10 @@ $('#content').addEventListener('input', e => {
         const template = document.createElement('template');
         template.innerHTML = findings();
         $('#content > .panel').replaceWith(template.content.querySelector('.panel'));
+    }
+    if (e.target.id === 'log-search') {
+        logQuery = e.target.value;
+        $('#content > .panel').outerHTML = logRows();
     }
 });
 $('#content').addEventListener('click', e => {
@@ -407,7 +459,8 @@ $('#content').addEventListener('click', e => {
 });
 $('#refresh').onclick = () => {
     if (!dirty) $('#notice').hidden = true;
-    load();
+    if (currentRoute() === 'logs') loadLogs();
+    else load();
 };
 $('#save').onclick = save;
 $('#discard').onclick = () => {
@@ -435,6 +488,7 @@ setTheme(theme);
 window.addEventListener('hashchange', () => {
     document.body.classList.remove('menu-open');
     render();
+    if (currentRoute() === 'logs') void loadLogs();
     window.scrollTo(0, 0);
 });
 window.addEventListener('beforeunload', e => {

@@ -123,14 +123,17 @@ services:
       CADDY_ADMIN_URL: http://172.31.0.3:2019
       LAB_AUTOMATION_TOKEN: ${LAB_AUTOMATION_TOKEN:-local-learning-worker-token}
       LAB_LOG_FILE: /var/log/lab/portal.jsonl
+      ELASTICSEARCH_URL: http://elasticsearch:9200
     volumes:
       - ./runtime/policy:/shared
       - ./runtime/tuning:/tuning
       - ./waf/Caddyfile:/waf/Caddyfile:ro
       - ./runtime/logs:/var/log/lab
-    networks: [management, automation, appdata, logging, host_access]
+    networks: [management, automation, appdata, logging, observability, host_access]
     depends_on:
       postgres:
+        condition: service_healthy
+      elasticsearch:
         condition: service_healthy
 
   postgres:

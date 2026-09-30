@@ -38,10 +38,11 @@ docker compose -f lab/docker-compose.yml up -d --build --force-recreate portal
 | IP & quốc gia | Allow/deny IP/CIDR sinh rule Coraza `@ipMatch`; mã quốc gia và IP fixture dạng JSON vẫn là mô phỏng. |
 | Tuning rules | Tạo/sửa/thu hồi/bật/tắt ngoại lệ theo site, rule ID, method, route, target, thời hạn và lý do. Backend giữ validation và rollback reload cũ. |
 | Learning & automation | Heartbeat worker, Manual/Automatic, PL mục tiêu, xác nhận flow test, cho phép ngoại lệ tự động và endpoint được phép. |
+| Nhật ký | Xem 100 sự kiện mới nhất từ Elasticsearch, lọc theo nguồn, tìm trong danh sách và mở JSON của từng sự kiện. |
 
 Policy được chỉnh thành bản nháp dùng chung giữa các màn hình. “Lưu và áp dụng” gửi `PUT /api/policy` kèm version. Khi lỗi, bản nháp được giữ; khi xung đột version, hủy bản nháp rồi làm mới. “Thu hồi” ngoại lệ chỉ vào bản nháp cho đến khi lưu. Nhãn learning lưu ngay sau khi xác nhận trong hộp thoại. Backend vẫn ghi audit, xuất policy JSON và reload tuning khi thay đổi. Không có thao tác tự hạ ngưỡng learning hoặc ép nâng PL.
 
-Thống kê lưu lượng theo thời gian, địa lý thực và cảnh báo nằm trong Kibana. Portal hiện không có API cung cấp chúng, vì vậy giao diện không tạo bản đồ hoặc traffic chart bằng dữ liệu giả. `preview=1` luôn sử dụng dữ liệu mẫu và không ghi API, kể cả khi mở trên port 8090.
+Portal đọc nhật ký qua API `/api/logs` từ Elasticsearch. Thống kê lưu lượng theo thời gian, địa lý thực và cảnh báo chuyên sâu vẫn nằm trong Kibana; portal không tạo bản đồ hoặc traffic chart bằng dữ liệu giả. `preview=1` không gọi API và không hiển thị nhật ký giả.
 
 ## File và luồng mã
 

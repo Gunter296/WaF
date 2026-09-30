@@ -13,6 +13,7 @@ const tuningFile = process.env.TUNING_FILE || "/tuning/tuning.conf";
 const ipPolicyFile = process.env.IP_POLICY_FILE || "/tuning/ip-policy.conf";
 const caddyFile = process.env.CADDYFILE || "/waf/Caddyfile";
 const caddyAdmin = process.env.CADDY_ADMIN_URL || "http://172.31.0.3:2019";
+const elasticsearchUrl = process.env.ELASTICSEARCH_URL || "http://elasticsearch:9200";
 const automationToken = process.env.LAB_AUTOMATION_TOKEN || "local-learning-worker-token";
 const pool = new Pool({ host: process.env.PGHOST, port: Number(process.env.PGPORT || 5432), database: process.env.PGDATABASE, user: process.env.PGUSER, password: process.env.PGPASSWORD });
 
@@ -36,6 +37,18 @@ const defaults = {
 async function log(action, details = {}) {
   const event = { "@timestamp": new Date().toISOString(), event: { dataset: "portal.audit", action }, ...details };
   await appendFile(logFile, `${JSON.stringify(event)}\n`).catch(() => {});
+}
+
+async function recentLogs() {
+  const response = await fetch(`${elasticsearchUrl}/waf-lab-*/_search?allow_no_indices=true&ignore_unavailable=true`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ size: 100, sort: [{ "@timestamp": { order: "desc", unmapped_type: "date" } }], query: { match_all: {} } }),
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!response.ok) throw new Error(`Elasticsearch returned ${response.status}`);
+  const result = await response.json();
+  return (result.hits?.hits || []).map(hit => hit._source || {});
 }
 
 async function ensureStorage() {
@@ -318,6 +331,7 @@ const server = http.createServer(async (req, res) => {
       const saved = await serialize(() => savePolicy(incoming)); sendJson(res, 200, saved); return;
     }
     if (req.url === "/api/learning" && req.method === "GET") { sendJson(res, 200, await learningRows()); return; }
+    if (req.url === "/api/logs" && req.method === "GET") { sendJson(res, 200, await recentLogs()); return; }
     if (req.url === "/api/learning/blockers" && req.method === "GET") {
       sendJson(res, 200, { open_severe: await hasOpenSevere((await currentPolicy()).document) }); return;
     }
