@@ -1,12 +1,10 @@
 {
     auto_https off
-    order lab_policy before reverse_proxy
     admin 172.31.0.3:2019
 }
 
 :8080 {
     @health path /healthz
-    respond @health "ok" 200
 
     log {
         output file /var/log/lab/waf-access.jsonl
@@ -14,7 +12,8 @@
     }
 
     route {
-        lab_policy /etc/waf-lab/policy.json
+    	respond @health "ok" 200
+        lab_policy */etc/waf-lab/policy.json
         coraza_waf {
             load_owasp_crs
             tx_id_req_header "X-Request-ID"

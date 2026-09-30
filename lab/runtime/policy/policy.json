@@ -1,9 +1,9 @@
 {
-  "version": 0,
+  "version": 4,
   "enabled": true,
   "mode": "On",
-  "blocking_pl": 1,
-  "detection_pl": 2,
+  "blocking_pl": 3,
+  "detection_pl": 4,
   "cve_rules": {
     "CVE-2026-64642": false,
     "CVE-2026-64645": false
@@ -13,12 +13,12 @@
   },
   "tuning_rules": [],
   "automation": {
-    "mode": "manual",
-    "target_pl": 2,
+    "mode": "automatic",
+    "target_pl": 3,
     "flow_test_passed": false,
     "auto_exceptions": false,
     "approved_paths": [],
-    "last_change_at": null,
+    "last_change_at": "2026-09-30T09:47:24.338Z",
     "transition": null
   },
   "rate_limit": {
@@ -56,22 +56,22 @@
   },
   "behavior": {
     "login_failures": {
-      "enabled": true,
       "limit": 5,
-      "window_seconds": 60,
-      "action": "block"
+      "action": "block",
+      "enabled": true,
+      "window_seconds": 60
     },
     "not_found_burst": {
-      "enabled": true,
       "limit": 15,
-      "window_seconds": 30,
-      "action": "observe"
+      "action": "observe",
+      "enabled": true,
+      "window_seconds": 30
     },
     "sequential_documents": {
-      "enabled": true,
       "limit": 4,
-      "window_seconds": 30,
-      "action": "observe"
+      "action": "observe",
+      "enabled": true,
+      "window_seconds": 30
     }
   }
 }

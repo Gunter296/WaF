@@ -13,6 +13,7 @@ services:
       frontend:
         ipv4_address: 172.30.0.2
       logging: {}
+      host_access: {}
     depends_on:
       waf:
         condition: service_healthy
@@ -127,7 +128,7 @@ services:
       - ./runtime/tuning:/tuning
       - ./waf/Caddyfile:/waf/Caddyfile:ro
       - ./runtime/logs:/var/log/lab
-    networks: [management, automation, appdata, logging]
+    networks: [management, automation, appdata, logging, host_access]
     depends_on:
       postgres:
         condition: service_healthy
@@ -176,7 +177,7 @@ services:
       ELASTICSEARCH_HOSTS: http://elasticsearch:9200
       TELEMETRY_ENABLED: "false"
       XPACK_SECURITY_ENABLED: "false"
-    networks: [observability, logging]
+    networks: [observability, logging, host_access]
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -264,16 +265,19 @@ services:
         condition: service_started
 
 networks:
+  host_access: {}
   frontend:
     internal: true
     ipam:
       config:
         - subnet: 172.30.0.0/24
+          ip_range: 172.30.0.128/25
   management:
     internal: true
     ipam:
       config:
         - subnet: 172.31.0.0/24
+          ip_range: 172.31.0.128/25
   automation:
     internal: true
   appdata:
