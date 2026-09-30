@@ -30,6 +30,8 @@ services:
       context: ./waf
       dockerfile: Dockerfile
     restart: unless-stopped
+    environment:
+      GEOIP_DB_PATH: /var/lib/geoip/GeoLite2-Country.mmdb
     expose: ["8080"]
     volumes:
       - ./waf/Caddyfile:/etc/caddy/Caddyfile:ro
@@ -37,6 +39,7 @@ services:
       - ./runtime/tuning:/etc/coraza-tuning:ro
       - ./runtime/logs:/var/log/lab
       - ./runtime/policy:/etc/waf-lab:ro
+      - ./geoip:/var/lib/geoip:ro
     networks:
       frontend:
         ipv4_address: 172.30.0.3

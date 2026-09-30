@@ -35,7 +35,7 @@ docker compose -f lab/docker-compose.yml up -d --build --force-recreate portal
 | Hàng đợi phân tích | Tìm kiếm, lọc trạng thái, phân trang, xuất JSON đã lọc, xem request ID và gắn nhãn kèm bằng chứng. |
 | WAF & CRS | Bật policy lab, DetectionOnly/On, Blocking/Detection PL, hai virtual patch, ngoại lệ SQLi fixture, xem JSON. |
 | Bot & hành vi | Bot detection, token bucket, fanout, rate IP/CIDR, prefix IPv4/IPv6, đăng nhập thất bại, burst 404, truy cập chứng từ tuần tự. |
-| IP & quốc gia | Allow/deny IP/CIDR, mã quốc gia và IP fixture dạng JSON. |
+| IP & quốc gia | Allow/deny IP/CIDR sinh rule Coraza `@ipMatch`; mã quốc gia và IP fixture dạng JSON vẫn là mô phỏng. |
 | Tuning rules | Tạo/sửa/thu hồi/bật/tắt ngoại lệ theo site, rule ID, method, route, target, thời hạn và lý do. Backend giữ validation và rollback reload cũ. |
 | Learning & automation | Heartbeat worker, Manual/Automatic, PL mục tiêu, xác nhận flow test, cho phép ngoại lệ tự động và endpoint được phép. |
 

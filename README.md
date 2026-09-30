@@ -17,5 +17,6 @@ Repo thử nghiệm Coraza + OWASP CRS và lab website tài chính giả lập. 
 - [Đề xuất cho cấu hình gốc (chỉ tài liệu)](docs/de-xuat-cau-hinh-goc.md)
 - [CVE, ca lab và cách diễn giải](docs/scenarios.md)
 - [Nguồn tham khảo chính thức](docs/references.md)
+- [Yêu cầu và dựng lab trên Ubuntu](docs/ubuntu-deploy.md) · [lệnh kiểm tra/cài đặt](requirement.txt)
 
 Chỉ dùng mục tiêu thuộc stack lab. Dữ liệu tài chính đều là dữ liệu giả.

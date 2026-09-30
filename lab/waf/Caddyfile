@@ -23,6 +23,7 @@
                 Include @crs-setup.conf.example
                 Include /etc/coraza-lab/coraza.conf
                 Include /etc/coraza-lab/lab-rules.conf
+                Include /etc/coraza-tuning/ip-policy.conf
                 Include /etc/coraza-tuning/tuning.conf
                 Include @owasp_crs/*.conf
             `
@@ -35,6 +36,9 @@
             header_up -X-Lab-CVE-64642
             header_up -X-Lab-CVE-64645
             header_up -X-Lab-Exclude-SQLi-942100
+            header_up -X-Lab-Client-IP
+            header_up -X-Lab-Country
+            header_up -X-Lab-Geo-Source
         }
         reverse_proxy finance-vulnerable:3000 {
             header_up -X-Lab-Mode
@@ -43,6 +47,9 @@
             header_up -X-Lab-CVE-64642
             header_up -X-Lab-CVE-64645
             header_up -X-Lab-Exclude-SQLi-942100
+            header_up -X-Lab-Client-IP
+            header_up -X-Lab-Country
+            header_up -X-Lab-Geo-Source
         }
     }
 }

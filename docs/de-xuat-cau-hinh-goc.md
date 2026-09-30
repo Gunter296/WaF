@@ -10,4 +10,14 @@ Tài liệu này ghi lại những điểm nên xem xét khi nâng cấp cấu h
 | `coraza-caddy/Dockerfile` | CRS download/build đang comment; CRS version arg có comment. File này có một thay đổi chưa commit từ trước: `ARG CRS_VERSION` đã thành `#ARG CRS_VERSION`. | Không ghi đè thay đổi sẵn có. Trong một thay đổi khác, ghim Caddy/Coraza/CRS rõ ràng và xác minh tương thích. |
 | `README.md` | Ban đầu chỉ có tiêu đề `WaF`. | README hiện liên kết vào lab; tài liệu vận hành chi tiết nằm ở `lab/README.md`. |
 
+## Đối chiếu với cấu hình lab hiện tại
+
+| Đề xuất | Trong `lab/` |
+| --- | --- |
+| Bind cổng ở loopback, tách Compose, bỏ service placeholder | Đã áp dụng trong `lab/docker-compose.yml`; các cổng publish dùng `127.0.0.1`. |
+| Health check, route finance và failover | Đã áp dụng trong `lab/edge/haproxy.cfg`; backup chuyển thẳng tới origin và ghi tuyến `bypass`. |
+| CRS, giới hạn body và log riêng | Đã cấu hình tại `lab/waf/Caddyfile` và `lab/waf/config/coraza.conf`; CRS được plugin Coraza-Caddy đóng gói trong image lab. |
+| Ghim phiên bản image và cô lập mạng lúc chạy | Compose lab dùng tag cụ thể, các mạng đánh dấu `internal: true`. `finance/Dockerfile` chọn phiên bản Next.js bằng build arg, nhưng chạy `npm install --no-package-lock`: bản transitive dependency chưa được khóa bằng lockfile. |
+| Nâng cấp cấu hình gốc | Chưa áp dụng; các file gốc giữ nguyên. |
+
 Với route backup HAProxy, cần coi failover tới origin là trạng thái giảm bảo vệ và cảnh báo rõ. Không dùng khả năng bypass này cho dịch vụ tài chính thật. Xem cấu hình lab và hướng dẫn chạy để biết hiện thực hóa được cô lập như thế nào.

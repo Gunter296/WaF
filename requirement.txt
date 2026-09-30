@@ -1,0 +1,75 @@
+# Yêu cầu Ubuntu để chạy WAF finance lab
+# Đây là hướng dẫn lệnh Bash, không phải requirements.txt của pip.
+# Chạy từng khối trong terminal Ubuntu; chỉ lệnh trong nhánh thiếu mới cài gói.
+# Tham chiếu: https://docs.docker.com/engine/install/ubuntu/
+#             https://www.elastic.co/docs/deploy-manage/deploy/self-managed/vm-max-map-count
+
+# 1. Xác nhận hệ điều hành và tài nguyên. Đề nghị >= 6 GiB RAM, >= 8 GiB trống.
+. /etc/os-release
+printf 'OS: %s %s\n' "$ID" "$VERSION_ID"
+test "$ID" = ubuntu || { echo 'Tài liệu cài gói này chỉ dành cho Ubuntu'; exit 1; }
+free -h
+df -h .
+
+# 2. Git và curl chỉ cài nếu chưa có. Git dùng để lấy repo; curl dùng kiểm tra HTTP.
+if ! command -v git >/dev/null 2>&1; then
+  sudo apt-get update
+  sudo apt-get install -y git
+fi
+if ! command -v curl >/dev/null 2>&1; then
+  sudo apt-get update
+  sudo apt-get install -y curl
+fi
+git --version
+curl --version | head -n 1
+
+# 3. Nếu Docker Engine, Compose HOẶC Buildx plugin còn thiếu, thêm kho Docker chính thức
+#    và cài các gói cần thiết. Không tự xóa bản Docker đang có từ kho khác.
+if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1 || ! docker buildx version >/dev/null 2>&1; then
+  sudo apt-get update
+  sudo apt-get install -y ca-certificates curl
+  sudo install -m 0755 -d /etc/apt/keyrings
+  if [ ! -s /etc/apt/keyrings/docker.asc ]; then
+    sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    sudo chmod a+r /etc/apt/keyrings/docker.asc
+  fi
+  if [ ! -f /etc/apt/sources.list.d/docker.sources ]; then
+    . /etc/os-release
+    printf 'Types: deb\nURIs: https://download.docker.com/linux/ubuntu\nSuites: %s\nComponents: stable\nArchitectures: %s\nSigned-By: /etc/apt/keyrings/docker.asc\n' \
+      "${UBUNTU_CODENAME:-$VERSION_CODENAME}" "$(dpkg --print-architecture)" \
+      | sudo tee /etc/apt/sources.list.d/docker.sources >/dev/null
+  fi
+  sudo apt-get update
+  if command -v docker >/dev/null 2>&1; then
+    # Engine đã có: chỉ cài plugin còn thiếu.
+    if ! docker compose version >/dev/null 2>&1; then
+      sudo apt-get install -y docker-compose-plugin
+    fi
+    if ! docker buildx version >/dev/null 2>&1; then
+      sudo apt-get install -y docker-buildx-plugin
+    fi
+  else
+    sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  fi
+fi
+sudo systemctl enable --now docker
+sudo docker version
+sudo docker compose version
+sudo docker buildx version
+sudo docker info >/dev/null && echo 'Docker daemon: OK'
+
+# 4. Elasticsearch 9 cần vm.max_map_count >= 1048576 trên Linux.
+#    Chỉ thay đổi nếu giá trị hiện tại thấp hơn mức cần thiết.
+current_map_count=$(sysctl -n vm.max_map_count)
+echo "vm.max_map_count hiện tại: $current_map_count"
+if [ "$current_map_count" -lt 1048576 ]; then
+  printf 'vm.max_map_count=1048576\n' | sudo tee /etc/sysctl.d/99-waf-finance-lab.conf >/dev/null
+  sudo sysctl --system >/dev/null
+fi
+sysctl vm.max_map_count
+
+# 5. Những thành phần này nằm trong Compose image; KHÔNG cần cài lên Ubuntu:
+#    Caddy/Coraza/CRS, HAProxy, Node.js/Next.js, Go, PostgreSQL,
+#    Elasticsearch, Kibana, Filebeat, Mailpit và Nuclei.
+#    Docker phải truy cập registry, npm và Go modules lúc pull/build lần đầu.
+#    GeoLite2-Country.mmdb là tùy chọn, phải tự cấp nếu cần tra quốc gia IP public.

@@ -18,6 +18,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/mileusna/useragent"
+	"github.com/oschwald/geoip2-golang"
 	"golang.org/x/time/rate"
 )
 
@@ -35,6 +36,7 @@ type Handler struct {
 	lastDoc    map[string]int
 	botWindows map[string]botWindow
 	botLimiters map[string]botLimiter
+	geoDB      *geoip2.Reader
 }
 
 type counter struct {
@@ -78,7 +80,6 @@ type policy struct {
 		Allow    []string            `json:"allow"`
 		Fixtures map[string]string   `json:"fixtures"`
 	} `json:"geo"`
-	IPPolicy struct { Enabled bool `json:"enabled"`; Deny []string `json:"deny"`; Allow []string `json:"allow"` } `json:"ip_policy"`
 	BotDetection struct {
 		Enabled bool `json:"enabled"`
 		UniquePaths int `json:"unique_paths"`
@@ -113,6 +114,21 @@ func (h *Handler) Provision(caddy.Context) error {
 	h.lastDoc = make(map[string]int)
 	h.botWindows = make(map[string]botWindow)
 	h.botLimiters = make(map[string]botLimiter)
+	geoDBPath := os.Getenv("GEOIP_DB_PATH")
+	if geoDBPath != "" {
+		if _, err := os.Stat(geoDBPath); err == nil {
+			db, err := geoip2.Open(geoDBPath)
+			if err != nil { return fmt.Errorf("open GeoIP database: %w", err) }
+			h.geoDB = db
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("stat GeoIP database: %w", err)
+		}
+	}
+	return nil
+}
+
+func (h *Handler) Cleanup() error {
+	if h.geoDB != nil { return h.geoDB.Close() }
 	return nil
 }
 
@@ -135,9 +151,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	for _, header := range []string{
 		"X-Lab-Mode", "X-Lab-Blocking-PL", "X-Lab-Detection-PL",
 		"X-Lab-CVE-64642", "X-Lab-CVE-64645", "X-Lab-Exclude-SQLi-942100",
+		"X-Lab-Client-IP", "X-Lab-Country", "X-Lab-Geo-Source",
 	} {
 		r.Header.Del(header)
 	}
+	// Coraza's IP rules consume this value. Never accept one supplied by a client.
+	r.Header.Set("X-Lab-Client-IP", clientIP)
+	country, geoSource := h.country(clientIP, p.Geo.Fixtures)
+	r.Header.Set("X-Lab-Country", country)
+	r.Header.Set("X-Lab-Geo-Source", geoSource)
 	if strings.EqualFold(p.Mode, "DetectionOnly") || strings.EqualFold(p.Mode, "detect") || strings.EqualFold(p.Mode, "observe") {
 		mode = "DetectionOnly"
 	}
@@ -165,16 +187,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	if !p.Enabled {
 		return next.ServeHTTP(w, r)
 	}
-	if p.IPPolicy.Enabled {
-		blocked := ipInList(clientIP, p.IPPolicy.Deny) || (len(p.IPPolicy.Allow) > 0 && !ipInList(clientIP, p.IPPolicy.Allow))
-		if blocked { return h.decide(w, r, next, mode, http.StatusForbidden, requestID, clientIP, "ip_policy", "client IP/CIDR policy matched") }
-	}
-
 	if p.Geo.Enabled {
-		country := fixtureCountry(clientIP, p.Geo.Fixtures)
 		blocked := contains(p.Geo.Deny, country) || (len(p.Geo.Allow) > 0 && !contains(p.Geo.Allow, country))
 		if blocked {
-			return h.decide(w, r, next, mode, http.StatusForbidden, requestID, clientIP, "geo_policy", "country fixture denied: "+country)
+			return h.decide(w, r, next, mode, http.StatusForbidden, requestID, clientIP, "geo_policy", "country denied: "+country+" ("+geoSource+")")
 		}
 	}
 	if p.BotDetection.Enabled && p.BotDetection.UniquePaths >= 3 {
@@ -375,18 +391,22 @@ func fixtureCountry(ip string, fixtures map[string]string) string {
 	return "ZZ"
 }
 
-func contains(values []string, item string) bool {
-	for _, value := range values { if strings.EqualFold(value, item) { return true } }
-	return false
+func (h *Handler) country(ip string, fixtures map[string]string) (string, string) {
+	if country := fixtureCountry(ip, fixtures); country != "ZZ" {
+		country = strings.ToUpper(country)
+		if len(country) == 2 && country[0] >= 'A' && country[0] <= 'Z' && country[1] >= 'A' && country[1] <= 'Z' {
+			return country, "fixture"
+		}
+	}
+	parsed := net.ParseIP(ip)
+	if parsed == nil || h.geoDB == nil { return "ZZ", "unknown" }
+	record, err := h.geoDB.Country(parsed)
+	if err != nil || record == nil || record.Country.IsoCode == "" { return "ZZ", "unknown" }
+	return record.Country.IsoCode, "mmdb"
 }
 
-func ipInList(ip string, values []string) bool {
-	parsed := net.ParseIP(ip)
-	if parsed == nil { return false }
-	for _, value := range values {
-		if parsed.Equal(net.ParseIP(value)) { return true }
-		if _, block, err := net.ParseCIDR(value); err == nil && block.Contains(parsed) { return true }
-	}
+func contains(values []string, item string) bool {
+	for _, value := range values { if strings.EqualFold(value, item) { return true } }
 	return false
 }
 

@@ -1,4 +1,5 @@
 .env
+geoip/*.mmdb
 runtime/logs/*
 runtime/results/*
 !runtime/logs/.gitkeep

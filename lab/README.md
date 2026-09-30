@@ -27,7 +27,9 @@ docker compose -f lab/docker-compose.yml exec waf caddy validate --config /etc/c
 docker compose -f lab/docker-compose.yml exec waf caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --address 172.31.0.3:2019
 ```
 
-Các công tắc WAF ghi vào `policy.json` và được đọc ở từng request. Mở `http://127.0.0.1:8090/advanced` để tạo ngoại lệ CRS mới (rule ID, method, đường dẫn, tham số, hạn dùng), xem ứng viên learning và chọn `manual`/`automatic`. Portal sinh `lab/runtime/tuning/tuning.conf`, nạp lại Caddy qua admin API chỉ có trên mạng quản trị nội bộ; nếu nạp lỗi, cấu hình đang chạy được giữ lại. Xem [hướng dẫn learning và tuning](../docs/learning-tuning.md).
+Các công tắc WAF ghi vào `policy.json` và được đọc ở từng request. Portal mặc định dùng `http://127.0.0.1:8090/advanced` để tạo ngoại lệ CRS mới (rule ID, method, đường dẫn, tham số, hạn dùng), xem ứng viên learning và chọn `manual`/`automatic`. Khi chạy override `lab/docker-compose.portal-ui.yml`, giao diện mới chia các chức năng đó ở `#tuning`, `#findings` và `#automation`; `/advanced` chỉ là alias về giao diện chính. Portal sinh `lab/runtime/tuning/tuning.conf` và `ip-policy.conf` (rule `@ipMatch` cho danh sách IP/CIDR), nạp lại Caddy qua admin API chỉ có trên mạng quản trị nội bộ; nếu nạp lỗi, cấu hình đang chạy được giữ lại. Tra quốc gia ưu tiên fixture Docker cho IP nội bộ rồi dùng GeoIP MMDB cho IP public; thiếu database hoặc kết quả thì là `ZZ`. Xem [hướng dẫn learning và tuning](../docs/learning-tuning.md).
+
+Muốn ghi quốc gia thật của IP public bị rule IP chặn, đặt database GeoLite2 Country tương thích tại `lab/geoip/GeoLite2-Country.mmdb` rồi khởi động lại service `waf`. Caddy chỉ đọc file này tại lúc khởi tạo module. File `.mmdb` không nằm trong Git; người vận hành tự cấp và cập nhật. Audit Coraza của rule `100030`/`100031` ghi `client`, `country`, `source=mmdb|fixture|unknown` trong `logdata`, đối chiếu với request ID ở Kibana. IP nội bộ của lab dùng fixture; địa chỉ không tra được ghi `ZZ`, không đoán quốc gia. Database GeoIP chỉ làm giàu log IP bị chặn, còn quyết định chặn vẫn do `@ipMatch` thực thi.
 
 Worker đọc log Coraza/HAProxy từ Elasticsearch mỗi 60 giây. Chế độ mặc định là `manual`. Để thử `automatic`, quản trị viên cần đặt PL mục tiêu, xác nhận bài kiểm thử luồng hợp lệ và, nếu muốn tự áp dụng ngoại lệ tham số, bật lựa chọn đó kèm danh sách endpoint được phép. Dữ liệu Nuclei ít request sẽ không đạt điều kiện nâng PL 7 ngày/10.000 request; không hạ các ngưỡng này để lấy kết quả giả.
 
@@ -76,7 +78,7 @@ Fixture mặc định ánh xạ `.10` thành `VN`, `.20` thành `US`. Trong port
 
 ### Kiểm thử các policy hành vi
 
-Bot detection dùng thư viện Go nguồn mở [mileusna/useragent](https://github.com/mileusna/useragent) phiên bản `v1.3.5` để phân loại User-Agent và bộ giới hạn token bucket nguồn mở [golang.org/x/time/rate](https://pkg.go.dev/golang.org/x/time/rate) `v0.16.0` để xử lý spam request ngay tại WAF. Trong portal `/advanced`, bật bot detection, đặt `unique_paths=8`, `window_seconds=30`, `spam_requests=10`, `spam_window_seconds=10`, `action=block`, giữ WAF `On`, rồi chạy từng template riêng ngay sau khi cửa sổ đếm cũ hết:
+Bot detection dùng thư viện Go nguồn mở [mileusna/useragent](https://github.com/mileusna/useragent) phiên bản `v1.3.5` để phân loại User-Agent và bộ giới hạn token bucket nguồn mở [golang.org/x/time/rate](https://pkg.go.dev/golang.org/x/time/rate) `v0.16.0` để xử lý spam request ngay tại WAF. Trong portal mặc định `/advanced` hoặc giao diện mới `#bots`, bật bot detection, đặt `unique_paths=8`, `window_seconds=30`, `spam_requests=10`, `spam_window_seconds=10`, `action=block`, giữ WAF `On`, rồi chạy từng template riêng ngay sau khi cửa sổ đếm cũ hết:
 
 ```powershell
 .\lab\scripts\run-nuclei.ps1 -RunName bot-fanout -HostName localhost -WafMode On -Templates @('behavior-bot-declared-fanout.yaml') -RateLimit 2
@@ -84,6 +86,8 @@ Bot detection dùng thư viện Go nguồn mở [mileusna/useragent](https://git
 ```
 
 Template fanout cần đủ tám đường dẫn khác nhau trong 30 giây. Template spam lặp một đường dẫn; WAF trả 429 khi hết token trong bucket. Đối chiếu `rule.id=bot_declared_fanout` hoặc `bot_request_rate`, `http.request.id` và `lab.route=waf` trong Kibana. Khi đặt `action=observe` hoặc WAF `DetectionOnly`, request đi tiếp và template chặn sẽ không tạo finding; xem log `waf.behavior` để xác nhận ghi nhận. User-Agent là dữ liệu do client gửi, nên đây là phân loại tự khai báo, không xác thực danh tính Googlebot. Bot giấu User-Agent vẫn chịu giới hạn request chung của `rate_limit`.
+
+CRS 4.25.0 đã có nhóm `REQUEST-913-SCANNER-DETECTION.conf`; rule `913100` ở PL1 nhận diện User-Agent `nuclei` trong danh sách scanner. Không có file rule 913 riêng trong repo vì `load_owasp_crs` nạp CRS nhúng vào Caddy. Để quan sát, đặt WAF `On`, PL1, gửi một request với User-Agent `nuclei` qua `localhost:8080`, so với Host `direct.localhost`, rồi tìm rule ID `913100` và request ID trong audit Coraza. Đây chỉ là tín hiệu User-Agent, không ngăn scanner đổi User-Agent. Các bộ đếm rate, 404 và fanout trong module policy mới xử lý hành vi nhiều request. Nếu quét Nuclei để đo các CVE qua WAF, ghi nhận việc CRS chặn scanner trước khi probe đến ứng dụng; finding vắng mặt không tự chứng minh virtual patch đã chặn payload.
 
 Bật rate limit trong portal rồi chạy template giới hạn 35 request; chạy riêng sau khi cửa sổ đếm đã hết. Template đăng nhập gửi sáu lần đăng nhập giả và kiểm tra header rule. Để kiểm thử quốc gia, bật geo policy và deny `US`, sau đó dùng `nuclei-us` với template `behavior-geo-policy.yaml`. Ví dụ:
 

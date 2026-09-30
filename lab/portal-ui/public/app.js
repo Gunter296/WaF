@@ -225,7 +225,7 @@ function botsView() {
 }
 
 function accessView() {
-    return `<div class="hint">Country policy sử dụng IP fixture trong mạng Docker. Bảng này không biểu thị vị trí địa lý thật của client Internet. Allowlist để trống sẽ không giới hạn theo danh sách cho phép.</div><div class="equal-col">${panel('IP / CIDR',toggle('ip_policy.enabled','Bật chính sách IP / CIDR')+grid(field('ip_policy.deny','Danh sách chặn','list',{wide:true,help:'Mỗi dòng một IP hoặc CIDR.'})+field('ip_policy.allow','Danh sách cho phép','list',{wide:true})))}${panel('Quốc gia mô phỏng',toggle('geo.enabled','Bật country policy')+grid(field('geo.deny','Mã quốc gia chặn','list',{help:'Mỗi dòng một mã, ví dụ US.'})+field('geo.allow','Mã quốc gia cho phép','list')+field('geo.fixtures','Ánh xạ IP → mã quốc gia','json',{wide:true,rows:5})))}</div>`;
+    return `<div class="hint">Danh sách IP/CIDR được portal kiểm tra rồi sinh rule Coraza @ipMatch; denylist ưu tiên trước allowlist. IP được cho phép vẫn qua CRS. Log chặn ghi mã quốc gia từ fixture Docker hoặc GeoIP MMDB nếu có; khi không tra được sẽ là ZZ. Allowlist để trống sẽ không giới hạn theo danh sách cho phép.</div><div class="equal-col">${panel('IP / CIDR',toggle('ip_policy.enabled','Bật chính sách IP / CIDR')+grid(field('ip_policy.deny','Danh sách chặn','list',{wide:true,help:'Mỗi dòng một IP hoặc CIDR.'})+field('ip_policy.allow','Danh sách cho phép','list',{wide:true})))}${panel('Quốc gia / GeoIP',toggle('geo.enabled','Bật country policy')+grid(field('geo.deny','Mã quốc gia chặn','list',{help:'Mỗi dòng một mã, ví dụ US.'})+field('geo.allow','Mã quốc gia cho phép','list')+field('geo.fixtures','Ánh xạ IP → mã quốc gia','json',{wide:true,rows:5})))}</div>`;
 }
 
 function tuningView() {

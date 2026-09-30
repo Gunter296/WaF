@@ -2,7 +2,7 @@
 
 ## Luồng cấu hình
 
-1. Tại `http://127.0.0.1:8090/advanced`, admin nhập rule ID CRS, HTTP method, đường dẫn chính xác, target cụ thể (ví dụ `ARGS:q`), lý do và hạn dùng tối đa 30 ngày. Chọn phạm vi `rule` chỉ khi ngoại lệ một tham số không đủ.
+1. Trong portal mặc định tại `http://127.0.0.1:8090/advanced`, admin nhập rule ID CRS, HTTP method, đường dẫn chính xác, target cụ thể (ví dụ `ARGS:q`), lý do và hạn dùng tối đa 30 ngày. Với giao diện `portal-ui` bật qua Compose override, dùng `http://127.0.0.1:8090/#tuning`; `/advanced` chỉ mở cùng giao diện chính. Chọn phạm vi `rule` chỉ khi ngoại lệ một tham số không đủ.
 2. Portal kiểm tra dữ liệu, lưu bản chính và lịch sử thay đổi ở PostgreSQL, sinh `lab/runtime/tuning/tuning.conf`. File này chứa `SecRule` phase 1 trước CRS và dùng `ctl:ruleRemoveTargetById` hoặc `ctl:ruleRemoveById` cho đúng method/route.
 3. Portal gọi Caddy `/load` qua địa chỉ admin `172.31.0.3:2019` trên mạng `management`. Caddy kiểm tra và áp dụng cấu hình atomically; khi lỗi portal phục hồi file tuning trước đó. Website và worker không nằm trên mạng có địa chỉ admin.
 4. Thu hồi trên portal xóa ngoại lệ và reload. Mỗi rule có điều kiện `TIME_EPOCH` nên hết hạn ngay trong Coraza theo thời gian request; portal cũng xóa rule hết hạn và reload mỗi phút.

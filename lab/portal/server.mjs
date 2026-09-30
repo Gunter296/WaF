@@ -3,12 +3,14 @@ import { readFile, writeFile, rename, appendFile } from "node:fs/promises";
 import { Pool } from "pg";
 import { randomUUID } from "node:crypto";
 import { normalizeTuning, renderTuning } from "./tuning.mjs";
+import { normalizeIPPolicy, renderIPPolicy } from "./ip-policy.mjs";
 import { promotionDecision, rollbackDecision } from "./automation.mjs";
 
 const port = Number(process.env.PORT || 8090);
 const policyFile = process.env.POLICY_FILE || "/shared/policy.json";
 const logFile = process.env.LAB_LOG_FILE || "/var/log/lab/portal.jsonl";
 const tuningFile = process.env.TUNING_FILE || "/tuning/tuning.conf";
+const ipPolicyFile = process.env.IP_POLICY_FILE || "/tuning/ip-policy.conf";
 const caddyFile = process.env.CADDYFILE || "/waf/Caddyfile";
 const caddyAdmin = process.env.CADDY_ADMIN_URL || "http://172.31.0.3:2019";
 const automationToken = process.env.LAB_AUTOMATION_TOKEN || "local-learning-worker-token";
@@ -47,6 +49,7 @@ async function ensureStorage() {
   let policy = { ...structuredClone(defaults), ...existing, bot_detection: { ...defaults.bot_detection, ...(existing.bot_detection || {}) }, automation: { ...defaults.automation, ...(existing.automation || {}) }, tuning_rules: existing.tuning_rules || [] };
   await saveFile(policy);
   await writeTuning(renderTuning(normalizeTuning(policy.tuning_rules || [], new Date(), new Set((policy.tuning_rules || []).map((r) => r.id)))));
+  await writeIPPolicy(renderIPPolicy(normalizeIPPolicy(policy.ip_policy || defaults.ip_policy), policy.enabled !== false));
   if (!rows.length) await pool.query("INSERT INTO lab_policy(id,document) VALUES(1,$1)", [policy]);
   else await pool.query("UPDATE lab_policy SET document=$1 WHERE id=1", [policy]);
 }
@@ -55,6 +58,12 @@ async function writeTuning(content) {
   const temp = `${tuningFile}.tmp`;
   await writeFile(temp, content, { mode: 0o640 });
   await rename(temp, tuningFile);
+}
+
+async function writeIPPolicy(content) {
+  const temp = `${ipPolicyFile}.tmp`;
+  await writeFile(temp, content, { mode: 0o640 });
+  await rename(temp, ipPolicyFile);
 }
 
 async function reloadCaddy() {
@@ -132,10 +141,7 @@ async function savePolicy(incoming, internalAutomation = null) {
   next.geo.deny = Array.isArray(next.geo.deny) ? next.geo.deny.map(String).map((v) => v.trim().toUpperCase()).filter(Boolean) : [];
   next.geo.allow = Array.isArray(next.geo.allow) ? next.geo.allow.map(String).map((v) => v.trim().toUpperCase()).filter(Boolean) : [];
   next.geo.fixtures = typeof next.geo.fixtures === "object" && next.geo.fixtures ? next.geo.fixtures : defaults.geo.fixtures;
-  next.ip_policy = { ...next.ip_policy, ...incoming.ip_policy };
-  next.ip_policy.enabled = Boolean(next.ip_policy.enabled);
-  next.ip_policy.deny = Array.isArray(next.ip_policy.deny) ? next.ip_policy.deny.map(String).map((v) => v.trim()).filter(Boolean) : [];
-  next.ip_policy.allow = Array.isArray(next.ip_policy.allow) ? next.ip_policy.allow.map(String).map((v) => v.trim()).filter(Boolean) : [];
+  next.ip_policy = normalizeIPPolicy(incoming.ip_policy || defaults.ip_policy);
   for (const group of Object.values(next.behavior)) {
     group.enabled = Boolean(group.enabled);
     group.limit = Math.max(1, Math.min(10000, Number(group.limit) || 1));
@@ -144,7 +150,9 @@ async function savePolicy(incoming, internalAutomation = null) {
   }
   const oldTuning = await readFile(tuningFile, "utf8").catch(() => "# Empty tuning\n");
   const newTuning = renderTuning(next.tuning_rules);
-  const tuningChanged = oldTuning !== newTuning;
+  const oldIPPolicy = await readFile(ipPolicyFile, "utf8").catch(() => "# Empty IP policy\n");
+  const newIPPolicy = renderIPPolicy(next.ip_policy, next.enabled);
+  const tuningChanged = oldTuning !== newTuning || oldIPPolicy !== newIPPolicy;
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -152,6 +160,7 @@ async function savePolicy(incoming, internalAutomation = null) {
     await client.query("INSERT INTO lab_audit(action,document) VALUES($1,$2)", ["policy_updated", next]);
     if (tuningChanged) {
       await writeTuning(newTuning);
+      await writeIPPolicy(newIPPolicy);
       await reloadCaddy();
     }
     await saveFile(next);
@@ -161,6 +170,7 @@ async function savePolicy(incoming, internalAutomation = null) {
     await saveFile(previous).catch(() => {});
     if (tuningChanged) {
       await writeTuning(oldTuning).catch(() => {});
+      await writeIPPolicy(oldIPPolicy).catch(() => {});
       await reloadCaddy().catch(() => {});
     }
     throw error;
