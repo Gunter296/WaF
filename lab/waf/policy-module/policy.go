@@ -425,7 +425,7 @@ func (w *statusWriter) Write(p []byte) (int, error) { if w.status == 0 { w.Write
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	var m Handler
 	if err := m.UnmarshalCaddyfile(h.Dispenser); err != nil { return nil, err }
-	return m, nil
+	return &m, nil
 }
 
 func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
