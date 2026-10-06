@@ -38,6 +38,20 @@ test("Caddy file and Coraza audit have explicit sources and rule classification"
   assert.deepEqual(payload.portal.matches, ["Matched Data: ' OR 1=1-- found within ARGS:q"]);
 });
 
+test("Coraza audit schema classifies CRS SQLi and formats matched data without object coercion", () => {
+  const row = normalizeLog({
+    log: { file: { path: "/var/log/lab/coraza-audit.jsonl" } },
+    transaction: { is_interrupted: true, id: "BXlmEarWWqJFLOTQ", request: { uri: "/api/lab/search?q=%27%20OR%201%3D1--" }, messages: [
+      { message: "SQL Injection Attack Detected via libinjection", data: { id: 942100, tags: ["attack-sqli", "OWASP_CRS"], data: "Matched Data: s&1c found within ARGS:q: ' OR 1=1--" } },
+      { message: "Inbound Anomaly Score Exceeded (Total Score: 5)", data: { id: 949110, tags: ["anomaly-evaluation"] } }
+    ] }
+  });
+  assert.equal(row.portal.category, "SQL injection");
+  assert.deepEqual(row.portal.rules, ["942100", "949110"]);
+  assert.equal(row.portal.matches[0], "Matched Data: s&1c found within ARGS:q: ' OR 1=1--");
+  assert.equal(row.portal.blocked, true);
+});
+
 test("unrecognized file keeps its filename as source instead of a generic label", () => {
   const row = normalizeLog({ log: { file: { path: "/var/log/nuclei/probe.jsonl" } } });
   assert.equal(row.portal.source_label, "probe.jsonl");

@@ -644,12 +644,13 @@ h3 {
 }
 
 .logs-panel { min-width: 0 }
-.logs-table-wrap { display: block; width: 100%; max-width: 100%; overflow-x: scroll; overscroll-behavior-x: contain; scrollbar-width: auto; scrollbar-color: #58716f #172021 }
+.logs-table-frame { width: 100%; max-width: 100%; overflow: hidden; border-bottom: 1px solid var(--border) }
+.logs-table-wrap { display: block; width: 100%; max-width: 100%; max-height: min(62vh, 720px); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #58716f #172021 }
 .logs-table-wrap::-webkit-scrollbar { height: 12px }
 .logs-table-wrap::-webkit-scrollbar-track { background: #172021 }
 .logs-table-wrap::-webkit-scrollbar-thumb { background: #58716f; border: 3px solid #172021; border-radius: 8px }
 .logs-table { min-width: 1760px }
-.logs-scroll-control { display: grid; grid-template-columns: max-content minmax(160px, 1fr); align-items: center; gap: 16px; padding: 10px 18px; background: #141e1f; border-bottom: 1px solid var(--border) }
+.logs-scroll-control { display: grid; grid-template-columns: max-content minmax(160px, 1fr); align-items: center; gap: 16px; padding: 9px 18px; background: #141e1f }
 .logs-scroll-control label { color: var(--muted); font-size: 12px; white-space: nowrap }
 .logs-scroll-control input[type="range"] { appearance: none; width: 100%; height: 24px; margin: 0; padding: 0; background: transparent; cursor: ew-resize; accent-color: var(--mint) }
 .logs-scroll-control input[type="range"]::-webkit-slider-runnable-track { height: 8px; border: 1px solid #526867; border-radius: 8px; background: #253334 }
@@ -661,7 +662,7 @@ h3 {
 .logs-table td:nth-child(3) { min-width: 190px; max-width: 270px; white-space: normal; overflow-wrap: anywhere }
 .logs-table td:nth-child(4) { min-width: 150px; white-space: normal }
 .logs-table td:nth-child(5) { min-width: 180px; max-width: 280px; white-space: normal; overflow-wrap: anywhere }
-.logs-table .json-details pre { max-width: 720px; font-size: 16px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere }
+.logs-table .json-details pre { width: min(720px, 55vw); max-height: 52vh; margin: 8px 0; overflow: auto; font-size: 16px; line-height: 1.6; white-space: pre; overflow-wrap: normal; scrollbar-width: thin; scrollbar-color: #58716f #172021 }
 .logs-toolbar label { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 11px }
 .logs-toolbar input[type="date"] { min-width: 145px; width: auto }
 .logs-help { margin: -5px 0 14px; font-size: 11px }

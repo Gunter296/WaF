@@ -140,14 +140,20 @@ function threatOf(row) {
   const transaction = row.transaction || row.audit_data?.transaction || {};
   const rawMessages = transaction.messages || row.messages || [];
   const messages = Array.isArray(rawMessages) ? rawMessages : [];
-  const rules = [row.rule?.id, ...messages.map(item => item.details?.ruleId || item.ruleId)].filter(Boolean).map(String);
-  const matches = [...new Set(messages.map(item => item.details?.match || item.details?.data || item.match || item.data).filter(Boolean).map(value => String(value).slice(0, 240)))].slice(0, 3);
-  const tags = messages.flatMap(item => item.details?.tags || item.tags || []).map(String);
-  const description = [row.message, ...messages.map(item => item.message || item.details?.message)].filter(Boolean).join(" ");
+  const detailsOf = item => item.details || item.data || {};
+  const rules = [row.rule?.id, ...messages.map(item => detailsOf(item).ruleId || detailsOf(item).id || item.ruleId || item.id)].filter(Boolean).map(String);
+  const matches = [...new Set(messages.flatMap(item => {
+    const details = detailsOf(item);
+    const values = [details.match, details.data, item.match, item.data];
+    return values.filter(value => typeof value === "string" && value.trim()).map(value => value.slice(0, 240));
+  }))].slice(0, 3);
+  const tags = messages.flatMap(item => detailsOf(item).tags || item.tags || []).map(String);
+  const description = [row.message, ...messages.flatMap(item => [item.message, detailsOf(item).message, detailsOf(item).msg])].filter(Boolean).join(" ");
   const labCves = { "100010": "CVE-2026-64642", "100011": "CVE-2026-64645" };
   const cves = [...new Set([...(description.match(/CVE-\d{4}-\d{4,}/gi) || []).map(value => value.toUpperCase()), ...rules.map(rule => labCves[rule]).filter(Boolean)])];
   const tagText = tags.join(" ").toLowerCase();
   const hasRule = prefix => rules.some(rule => rule.startsWith(prefix));
+  const isInterrupted = row.transaction?.is_interrupted === true || row.is_interrupted === true;
   let category = null;
   if (cves.length) category = cves.join(", ");
   else if (tagText.includes("attack-sqli") || hasRule("942")) category = "SQL injection";
@@ -158,7 +164,8 @@ function threatOf(row) {
   else if (hasRule("934")) category = "Generic application attack";
   else if (tagText.includes("attack-protocol") || hasRule("920")) category = "HTTP protocol";
   else if (tagText.includes("attack-scanner") || hasRule("913")) category = "Scanner";
-  return { category, cves, rules: [...new Set(rules)], matches };
+  else if (isInterrupted && rules.length) category = "WAF blocked request";
+  return { category, cves, rules: [...new Set(rules)], matches, blocked: isInterrupted };
 }
 
 export function normalizeLog(raw) {
