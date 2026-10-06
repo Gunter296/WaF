@@ -653,7 +653,7 @@ h3 {
 .logs-table td:nth-child(3) { min-width: 190px; max-width: 270px; white-space: normal; overflow-wrap: anywhere }
 .logs-table td:nth-child(4) { min-width: 150px; white-space: normal }
 .logs-table td:nth-child(5) { min-width: 180px; max-width: 280px; white-space: normal; overflow-wrap: anywhere }
-.logs-table .json-details pre { max-width: 520px; white-space: pre-wrap; overflow-wrap: anywhere }
+.logs-table .json-details pre { max-width: 720px; font-size: 16px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere }
 .logs-toolbar label { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 11px }
 .logs-toolbar input[type="date"] { min-width: 145px; width: auto }
 .logs-help { margin: -5px 0 14px; font-size: 11px }
@@ -868,7 +868,7 @@ pre {
 .json-details summary {
     cursor: pointer;
     color: #92bba6;
-    font-size: 11px;
+    font-size: 12px;
     padding: 5px 0
 }
 
