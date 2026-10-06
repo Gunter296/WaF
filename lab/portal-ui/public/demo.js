@@ -154,7 +154,11 @@ export const demoLogs = Array.from({ length: 30 }, (_, index) => {
     const row = structuredClone(demoLogSamples[index % demoLogSamples.length]);
     row['@timestamp'] = new Date(now - 30000 - Math.floor(index / 2) * 86400000 - (index % 2) * 2000).toISOString();
     const requestId = `demo-request-${String(Math.floor(index / 2) + 1).padStart(4, '0')}`;
-    if (row.transaction) row.transaction.id = requestId;
+    if (row.transaction) {
+        row.transaction.id = `coraza-${requestId}`;
+        row.transaction.request = { method: 'GET', headers: { 'x-request-id': [requestId], 'x-lab-mode': ['DetectionOnly'] } };
+        row.transaction.is_interrupted = true;
+    }
     if (row.http?.request) row.http.request.id = requestId;
     if (row.transaction) row.portal.correlation = { request_id: requestId, haproxy: {
         request_id: requestId, client_ip: row.portal.ip, method: 'GET', path: row.portal.path,
@@ -162,3 +166,12 @@ export const demoLogs = Array.from({ length: 30 }, (_, index) => {
     } };
     return row;
 });
+for (const row of demoLogs.filter(item => item.http?.request?.id === 'demo-request-0002' || item.transaction?.request?.headers?.['x-request-id']?.[0] === 'demo-request-0002')) {
+    row.portal.status = 200;
+    row.portal.category = null;
+    row.portal.rules = [];
+    if (row.http?.response) row.http.response.status_code = 200;
+    if (row.transaction) { row.transaction.is_interrupted = false; row.transaction.messages = []; }
+}
+demoLogs.splice(4, 0, { '@timestamp': new Date(now - 86435000).toISOString(), event: { dataset: 'finance.lab', action: 'search' }, http: { request: { id: 'demo-request-0002' }, response: { status_code: 200 } }, portal: { source_label: 'Finance', source_group: 'finance', category: null, rules: [], path: '/api/lab/search', ip: '192.0.2.10', status: 200 } });
+demoLogs.splice(5, 0, { '@timestamp': new Date(now - 36000).toISOString(), event: { dataset: 'haproxy.system', action: 'stopped' }, message: 'Proxy lab_http stopped (cumulated conns: FE: 0, BE: 0).', portal: { source_label: 'HAProxy hệ thống', source_group: 'haproxy', explanation: 'Proxy lab_http đã dừng. Không có request nào bị chặn bởi thông báo này.' } });

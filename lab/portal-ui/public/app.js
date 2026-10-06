@@ -195,19 +195,18 @@ function previewLogData() {
         pit_id: 'preview', next_after: offset + pageSize < filtered.length ? ['preview', offset + pageSize] : null };
 }
 function refreshLogPanel() {
-    const panel = $('#content > .panel');
+    const panel = $('#logs-results');
     if (!panel) { render(); return; }
     const table = panel.querySelector('.logs-table-wrap');
     const scroll = table ? { top: table.scrollTop, left: table.scrollLeft } : null;
-    const openKeys = [...panel.querySelectorAll('.json-details[open]')].map(details => details.dataset.logKey);
-    panel.outerHTML = logRows();
-    const nextPanel = $('#content > .panel');
-    const nextTable = nextPanel?.querySelector('.logs-table-wrap');
+    const openKeys = [...panel.querySelectorAll('details[data-log-key][open]')].map(details => details.dataset.logKey);
+    panel.innerHTML = logRows();
+    const nextTable = panel.querySelector('.logs-table-wrap');
     if (scroll && nextTable) {
         nextTable.scrollTop = scroll.top;
         nextTable.scrollLeft = scroll.left;
     }
-    for (const details of nextPanel?.querySelectorAll('.json-details[data-log-key]') || []) {
+    for (const details of panel.querySelectorAll('details[data-log-key]')) {
         if (openKeys.includes(details.dataset.logKey)) details.open = true;
     }
 }
@@ -364,20 +363,48 @@ function logRows() {
     if (logsLoading) return '<section class="panel empty">Đang tải nhật ký…</section>';
     if (logsError) return `<section class="panel empty">Không tải được nhật ký: ${esc(logsError)}</section>`;
     if (!logs.length) return '<section class="panel empty">Không có sự kiện phù hợp trong khoảng ngày đã chọn. Thử mở rộng thời gian hoặc tạo request mới.</section>';
-    return `<section class="panel logs-panel"><div class="panel-head"><h2>Nhật ký <span class="subtle">/ ${fmt(logsMeta.total)}</span></h2><small>Trang ${logsMeta.page} / ${logsMeta.pages} · ${logsMeta.page_size} bản ghi/trang</small></div><div class="logs-table-frame"><div class="table-wrap logs-table-wrap" tabindex="0" role="region" aria-label="Bảng nhật ký cuộn ngang"><table class="logs-table"><thead><tr><th>NGÀY / GIỜ</th><th>NGUỒN</th><th>SỰ KIỆN</th><th>PHÂN LOẠI</th><th>ĐƯỜNG DẪN / IP</th><th>HTTP</th><th>CHI TIẾT</th></tr></thead><tbody>${logs.map((row, index) => {
+    const requests = new Map();
+    const system = [];
+    for (const row of logs) {
+        const headers = row.transaction?.request?.headers || {};
+        const headerId = Object.entries(headers).find(([key]) => key.toLowerCase() === 'x-request-id')?.[1];
+        const id = row.http?.request?.id || row.request?.headers?.['X-Request-Id']?.[0] || (Array.isArray(headerId) ? headerId[0] : headerId) || row.portal?.correlation?.haproxy?.request_id || '';
+        if (!id || id === '-') { system.push(row); continue; }
+        if (!requests.has(id)) requests.set(id, []);
+        requests.get(id).push(row);
+    }
+    const sourceName = row => row.portal?.source_label || row.event?.dataset || 'Nguồn khác';
+    const evidence = row => {
         const info = row.portal || {};
-        const event = info.explanation || row?.event?.action || row?.rule?.id || (typeof row.message === 'string' ? row.message.slice(0, 140) : '') || 'request';
-        const route = info.correlation?.haproxy?.route || row?.lab?.route || '';
-        const rowKey = info.correlation?.request_id || row.transaction?.id || `${row?.['@timestamp'] || ''}:${index}`;
-        return `<tr><td>${esc(date(row?.['@timestamp']))}</td><td>${esc(info.source_label || 'Không rõ nguồn')}</td><td>${esc(event)}</td><td>${esc(info.category || 'Chưa phân loại')}${info.rules?.length ? `<br><span class="subtle">Rule ${esc(info.rules.join(', '))}</span>` : ''}${info.matches?.length ? `<br><span class="mono">${esc(info.matches[0])}</span>` : ''}</td><td><span class="mono">${esc(info.path || '')}</span><br><span class="subtle">${esc(info.ip || '')}</span>${route ? `<br><span class="subtle">Tuyến: ${esc(route)}</span>` : ''}</td><td>${info.blocked ? '<span class="status-badge denied">Đã chặn</span>' : esc(info.status ?? '—')}</td><td><details class="json-details" data-log-key="${esc(rowKey)}"><summary>Xem JSON</summary><pre>${esc(JSON.stringify(row, null, 2))}</pre></details></td></tr>`;
-    }).join('')}</tbody></table></div></div><div class="table-footer"><span>Hiển thị ${Math.min((logsMeta.page - 1) * logsMeta.page_size + 1, logsMeta.total)}–${Math.min(logsMeta.page * logsMeta.page_size, logsMeta.total)} / ${fmt(logsMeta.total)}</span><div class="action-row"><button data-action="log-prev" ${logsMeta.page <= 1 ? 'disabled' : ''}>← Trước</button><button data-action="log-next" ${!logsMeta.next_after ? 'disabled' : ''}>Sau →</button></div></div></section>`;
+        const label = sourceName(row);
+        const rules = info.rules?.length ? `Rule ${info.rules.join(', ')}` : '';
+        const result = info.explanation || row.messages?.[0]?.message || row.transaction?.messages?.[0]?.message || row.event?.action || row.message || 'Đã ghi nhận request';
+        return `<div class="request-evidence"><div><strong>${esc(label)}</strong><span class="subtle"> · ${esc(date(row['@timestamp']))}</span></div><p>${esc(result)}</p>${rules ? `<span class="request-rule">${esc(rules)}</span>` : ''}<details class="json-details" data-log-key="${esc(`${row['@timestamp']}:${label}`)}"><summary>Xem JSON nguồn này</summary><pre>${esc(JSON.stringify(row, null, 2))}</pre></details></div>`;
+    };
+    const body = [...requests].map(([id, rows]) => {
+        const primary = rows.find(row => row.portal?.category) || rows[0];
+        const proxy = rows.find(row => row.portal?.source_group === 'haproxy');
+        const context = rows.find(row => row.portal?.correlation?.haproxy)?.portal.correlation.haproxy;
+        const info = primary.portal || {};
+        const path = context?.path || rows.map(row => row.portal?.path).find(Boolean) || '';
+        const method = context?.method || proxy?.http?.request?.method || primary.transaction?.request?.method || '';
+        const ip = context?.client_ip || proxy?.portal?.ip || info.ip || '';
+        const status = context?.status ?? rows.map(row => row.portal?.status).find(value => value != null);
+        const blocked = rows.some(row => row.portal?.blocked || row.transaction?.is_interrupted === true);
+        const route = context?.route || proxy?.lab?.route || '';
+        const sourceLabels = [...new Set(rows.map(sourceName))];
+        if (context && !sourceLabels.some(label => label.toLowerCase().includes('haproxy'))) sourceLabels.unshift('HAProxy · ngữ cảnh');
+        return `<tr class="request-summary"><td>${esc(date(primary['@timestamp']))}</td><td><strong>${esc(ip || 'Chưa rõ IP')}</strong></td><td><strong class="request-path">${esc(`${method} ${path}`.trim() || 'Chưa rõ đường dẫn')}</strong><span class="mono request-id">${esc(id)}</span>${route ? `<span class="subtle">Tuyến: ${esc(route)}</span>` : ''}</td><td>${esc(info.category || 'Chưa phân loại')}${info.rules?.length ? `<span class="request-rule">Rule ${esc(info.rules.join(', '))}</span>` : ''}</td><td>${blocked ? `<span class="request-result blocked">Đã chặn · ${esc(status ?? 403)}</span>` : status === 403 ? '<span class="request-result rejected">403 · Từ chối</span>' : `<span class="request-result allowed">${esc(status ?? '—')}</span>`}</td><td><div class="request-source-list">${sourceLabels.map(label => `<span>${esc(label)}</span>`).join('')}</div></td><td><details class="request-details" data-log-key="${esc(id)}"><summary>Xem diễn biến</summary><div class="request-detail-content">${context && !rows.some(row => row.portal?.source_group === 'haproxy') ? `<div class="request-evidence"><strong>HAProxy · ngữ cảnh</strong><p>IP ${esc(context.client_ip || '—')} · tuyến ${esc(context.route || '—')} · backend ${esc(context.backend || '—')} · HTTP ${esc(context.status ?? '—')}</p><span class="subtle">Bản ghi HAProxy liên kết; JSON gốc chưa tải trong trang này.</span></div>` : ''}${rows.map(evidence).join('')}<div class="request-evidence subtle">${rows.some(row => row.portal?.source_group === 'finance') ? 'Có log ứng dụng.' : blocked ? 'Không có log ứng dụng trong dữ liệu đã tải; request có thể đã bị chặn trước ứng dụng.' : 'Chưa thấy log ứng dụng trong dữ liệu đã tải.'}</div></div></details></td></tr>`;
+    }).join('');
+    const systemRows = system.map(row => `<div class="system-event"><span>${esc(date(row['@timestamp']))}</span><strong>${esc(sourceName(row))}</strong><span>${esc(row.portal?.explanation || row.message || row.event?.action || 'Sự kiện không gắn request ID')}</span><details class="json-details" data-log-key="${esc(`system:${row['@timestamp']}`)}"><summary>Xem JSON</summary><pre>${esc(JSON.stringify(row, null, 2))}</pre></details></div>`).join('');
+    return `<section class="panel logs-panel"><div class="panel-head"><h2>Request <span class="subtle">/ ${requests.size} trong trang này</span></h2><small>${fmt(logsMeta.total)} bản ghi nguồn · trang ${logsMeta.page}/${logsMeta.pages}</small></div><div class="logs-table-frame"><div class="table-wrap logs-table-wrap" tabindex="0" role="region" aria-label="Bảng request cuộn ngang"><table class="logs-table request-table"><thead><tr><th>THỜI GIAN</th><th>IP CLIENT</th><th>REQUEST</th><th>PHÂN LOẠI</th><th>KẾT QUẢ</th><th>NGUỒN ĐÃ THẤY</th><th>CHI TIẾT</th></tr></thead><tbody>${body || '<tr><td colspan="7">Không có request trong trang bản ghi này.</td></tr>'}</tbody></table></div></div><div class="table-footer"><span>Gom các bản ghi có cùng X-Request-ID trong trang hiện tại</span><div class="action-row"><button data-action="log-prev" ${logsMeta.page <= 1 ? 'disabled' : ''}>← Trước</button><button data-action="log-next" ${!logsMeta.next_after ? 'disabled' : ''}>Sau →</button></div></div></section>${system.length ? `<section class="panel system-events"><div class="panel-head"><h2>Sự kiện hệ thống <span class="subtle">/ ${system.length}</span></h2><small>Không có X-Request-ID để ghép vào request</small></div><div class="system-event-list">${systemRows}</div></section>` : ''}`;
 }
 
 function logsView() {
     const sources = [['all','Tất cả nguồn'],['haproxy','HAProxy'],['waf','WAF / Coraza'],['finance','Finance'],['portal','Portal'],['other','Khác / chưa phân loại']];
     const categories = [['all','Mọi loại'],['sqli','SQL injection'],['xss','XSS'],['rce','RCE'],['lfi','LFI'],['ssrf','SSRF'],['cve','CVE']];
     const statuses = [['all','Mọi HTTP'],['2xx','2xx'],['3xx','3xx'],['4xx','4xx'],['5xx','5xx'],['403','403']];
-    return `<div class="toolbar logs-toolbar"><input id="log-search" type="search" aria-label="Tìm trong nhật ký" placeholder="Tìm request ID, IP, rule, đường dẫn…" value="${esc(logQuery)}"><label>Từ ngày <input id="log-from" type="date" value="${esc(logFrom)}"></label><label>Đến ngày <input id="log-to" type="date" value="${esc(logTo)}"></label></div><div class="logs-column-filters" aria-label="Lọc theo cột"><label>Nguồn<select id="log-dataset" aria-label="Lọc nguồn nhật ký">${sources.map(([value,label]) => `<option value="${value}" ${logDataset===value?'selected':''}>${label}</option>`).join('')}</select></label><label>Sự kiện<input id="log-event" type="search" placeholder="Tên sự kiện" value="${esc(logEvent)}"></label><label>Payload / CVE<select id="log-category">${categories.map(([value,label]) => `<option value="${value}" ${logCategory===value?'selected':''}>${label}</option>`).join('')}</select></label><label>Đường dẫn<input id="log-path" type="search" placeholder="/api/..." value="${esc(logPath)}"></label><label>IP<input id="log-ip" type="search" placeholder="IP chính xác" value="${esc(logIp)}"></label><label>HTTP<select id="log-status">${statuses.map(([value,label]) => `<option value="${value}" ${logStatus===value?'selected':''}>${label}</option>`).join('')}</select></label></div><p class="subtle logs-help">“Khác / chưa phân loại” là sự kiện không thuộc HAProxy, WAF/Coraza, Finance hoặc Portal. Khi có tên dataset/tệp, tên đó vẫn hiện ở cột Nguồn; “Không rõ nguồn” nghĩa là log thiếu thông tin nhận dạng. /healthz bị loại khỏi bảng vì đây là yêu cầu kiểm tra trạng thái dịch vụ. Mở JSON log WAF để xem ngữ cảnh HAProxy liên kết theo request ID.</p>${logRows()}`;
+    return `<div class="toolbar logs-toolbar"><input id="log-search" type="search" aria-label="Tìm trong nhật ký" placeholder="Tìm request ID, IP, rule, đường dẫn…" value="${esc(logQuery)}"><label>Từ ngày <input id="log-from" type="date" value="${esc(logFrom)}"></label><label>Đến ngày <input id="log-to" type="date" value="${esc(logTo)}"></label></div><div class="logs-column-filters" aria-label="Lọc theo cột"><label>Nguồn<select id="log-dataset" aria-label="Lọc nguồn nhật ký">${sources.map(([value,label]) => `<option value="${value}" ${logDataset===value?'selected':''}>${label}</option>`).join('')}</select></label><label>Sự kiện<input id="log-event" type="search" placeholder="Tên sự kiện" value="${esc(logEvent)}"></label><label>Payload / CVE<select id="log-category">${categories.map(([value,label]) => `<option value="${value}" ${logCategory===value?'selected':''}>${label}</option>`).join('')}</select></label><label>Đường dẫn<input id="log-path" type="search" placeholder="/api/..." value="${esc(logPath)}"></label><label>IP<input id="log-ip" type="search" placeholder="IP chính xác" value="${esc(logIp)}"></label><label>HTTP<select id="log-status">${statuses.map(([value,label]) => `<option value="${value}" ${logStatus===value?'selected':''}>${label}</option>`).join('')}</select></label></div><p class="subtle logs-help">Các bản ghi cùng X-Request-ID được gom trong trang hiện tại. Mở “Xem diễn biến” để đối chiếu từng nguồn. Sự kiện không có request ID nằm riêng bên dưới; /healthz không hiển thị.</p><div id="logs-results">${logRows()}</div>`;
 }
 
 function dialog(title, html, onSubmit) {
