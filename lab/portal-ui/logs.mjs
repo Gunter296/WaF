@@ -10,7 +10,7 @@ const fileSources = {
 };
 
 const fileMatch = names => ({ bool: { should: names.map(name => ({ wildcard: { "log.file.path": `*${name}` } })), minimum_should_match: 1 } });
-const wafSource = { bool: { should: [fileMatch(["waf-access.jsonl", "waf-policy.jsonl", "coraza-audit.jsonl"]), { term: { "event.dataset": "waf.behavior" } }, { term: { "event.dataset": "coraza.audit" } }], minimum_should_match: 1 } };
+const wafSource = { bool: { should: [fileMatch(["waf-access.jsonl", "waf-policy.jsonl", "coraza-audit.jsonl"]), { term: { "event.dataset": "waf.behavior" } }, { term: { "event.dataset": "coraza.audit" } }, { prefix: { logger: "http.log.access" } }], minimum_should_match: 1 } };
 const financeSource = { bool: { should: [{ wildcard: { "log.file.path": "*finance*.jsonl" } }, { term: { "event.dataset": "finance.lab" } }], minimum_should_match: 1 } };
 const portalSource = { bool: { should: [fileMatch(["portal.jsonl"]), { term: { "event.dataset": "portal.audit" } }], minimum_should_match: 1 } };
 const knownSources = [{ term: { "input.type": "udp" } }, wafSource, financeSource, portalSource];
@@ -76,13 +76,21 @@ export function logSearchRequest(params) {
   if (ip) filter.push({ bool: { should: [...["source.ip", "client.ip", "request.remote_ip", "transaction.client_ip"].map(field => ({ term: { [field]: ip } })),
     { bool: { filter: [{ term: { "input.type": "udp" } }, { match_phrase: { message: ip } }] } }], minimum_should_match: 1 } });
   if (q) {
-    const should = [{ multi_match: { query: q, fields: ["message", "http.request.id", "url.path", "request.uri", "transaction.id", "transaction.messages.message", "transaction.messages.details.message", "transaction.messages.details.data", "transaction.messages.details.match"], operator: "and" } }];
+    const should = [
+      { multi_match: { query: q, fields: ["message", "http.request.id", "url.path", "request.uri", "transaction.id", "transaction.messages.message", "transaction.messages.details.message", "transaction.messages.details.data", "transaction.messages.details.match"], operator: "and" } },
+      { match_phrase: { "http.request.id": q } }, { match_phrase: { "transaction.id": q } },
+      // Older Filebeat UDP events have only the escaped JSON envelope in `message`.
+      { bool: { filter: [{ term: { "input.type": "udp" } }, { match_phrase: { message: q } }] } }
+    ];
     if (/^[0-9a-fA-F:.]+$/.test(q)) should.push({ term: { "source.ip": q } });
     if (/^\d{5,7}$/.test(q)) should.push({ term: { "rule.id": q } }, { term: { "transaction.messages.details.ruleId": Number(q) } });
     filter.push({ bool: { should, minimum_should_match: 1 } });
   }
   const must_not = [
     { term: { "url.path": "/healthz" } },
+    { term: { "url.original": "/healthz" } },
+    { term: { "http.request.path": "/healthz" } },
+    { term: { "request.path": "/healthz" } },
     { term: { "request.uri": "/healthz" } },
     { term: { "request.uri.keyword": "/healthz" } },
     { term: { "transaction.request.uri": "/healthz" } },
@@ -97,8 +105,23 @@ function parseEmbeddedJson(row) {
   if (row.input?.type !== "udp" || typeof row.message !== "string" || !row.message.trimStart().startsWith("{")) return row;
   try {
     const parsed = JSON.parse(row.message);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? { ...row, ...parsed, "@timestamp": row["@timestamp"] } : row;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return row;
+    // Filebeat keeps the original UDP payload as an escaped JSON string. Once decoded,
+    // show the structured fields instead of repeating that whole string in `message`.
+    const base = { ...row };
+    delete base.message;
+    return { ...base, ...parsed, "@timestamp": row["@timestamp"] };
   } catch { return row; }
+}
+
+function explainEvent(row) {
+  const message = String(row.message || "");
+  const stopped = message.match(/^Proxy\s+(.+?)\s+stopped\s+\(cumulated conns:\s*FE:\s*(\d+),\s*BE:\s*(\d+)\)\.?$/i);
+  if (stopped) return `Proxy “${stopped[1]}” đã dừng. HAProxy ghi nhận ${stopped[2]} kết nối đi vào (FE) và ${stopped[3]} kết nối tới backend (BE). Đây là thông báo trạng thái, không phải một yêu cầu bị chặn.`;
+  if (row.http?.request?.method === "<BADREQ>" || row.url?.path === "<BADREQ>") {
+    return `HAProxy nhận được dữ liệu không đúng định dạng HTTP nên trả mã ${row.http?.response?.status_code || 400}. Không đọc được phương thức và đường dẫn của yêu cầu; địa chỉ IP là ${row.source?.ip || "không rõ"}.`;
+  }
+  return "";
 }
 
 function sourceOf(row) {
@@ -145,6 +168,7 @@ export function normalizeLog(raw) {
   const threat = threatOf(row);
   return { ...row, portal: {
     source: dataset, source_label: label, source_group: group,
+    explanation: explainEvent(row),
     path: row.url?.path || row.request?.uri || transaction.request?.uri || row.lab?.path || "",
     ip: row.source?.ip || row.client?.ip || row.request?.remote_ip || transaction.client_ip || "",
     status: row.http?.response?.status_code ?? row.status ?? transaction.response?.http_code ?? null,

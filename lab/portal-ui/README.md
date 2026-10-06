@@ -15,11 +15,19 @@ Mở <http://127.0.0.1:8091/?preview=1>. Banner vàng ghi rõ dữ liệu mẫu.
 ## Dùng với lab thực tế
 
 ```powershell
-docker compose -f lab/docker-compose.yml -f lab/docker-compose.portal-ui.yml config
-docker compose -f lab/docker-compose.yml -f lab/docker-compose.portal-ui.yml up -d --build portal
+docker compose --env-file lab/.env -f lab/docker-compose.yml -f lab/docker-compose.portal-ui.yml config
+docker compose --env-file lab/.env -f lab/docker-compose.yml -f lab/docker-compose.portal-ui.yml build --no-cache portal
+docker compose --env-file lab/.env -f lab/docker-compose.yml -f lab/docker-compose.portal-ui.yml up -d --force-recreate portal
 ```
 
-Mở <http://127.0.0.1:8090>. Service giữ tên `portal`, cổng, biến môi trường, volume và network cũ để worker vẫn hoạt động. Không chạy hai portal cùng ghi policy. Sau này dùng cùng hai `-f` khi thao tác stack mới.
+Mở <http://127.0.0.1:8090>. Trên VM đang đứng trong thư mục `lab`, dùng cùng hai file Compose và đổi đường dẫn env thành `.env`:
+
+```bash
+docker compose --env-file .env -f docker-compose.yml -f docker-compose.portal-ui.yml build --no-cache portal
+docker compose --env-file .env -f docker-compose.yml -f docker-compose.portal-ui.yml up -d --force-recreate portal
+```
+
+`git pull` chỉ cập nhật source trên máy; lệnh build tạo lại image có HTML/CSS/JS mới, còn `--force-recreate` thay container đang chạy. Service giữ tên `portal`, cổng, biến môi trường, volume và network cũ để worker vẫn hoạt động. Không chạy hai portal cùng ghi policy. Sau này dùng cùng hai `-f` khi thao tác stack mới.
 
 Quay lại giao diện dự phòng (policy và dữ liệu PostgreSQL vẫn giữ):
 
@@ -38,7 +46,7 @@ docker compose -f lab/docker-compose.yml up -d --build --force-recreate portal
 | IP & quốc gia | Allow/deny IP/CIDR sinh rule Coraza `@ipMatch`; mã quốc gia và IP fixture dạng JSON vẫn là mô phỏng. |
 | Tuning rules | Tạo/sửa/thu hồi/bật/tắt ngoại lệ theo site, rule ID, method, route, target, thời hạn và lý do. Backend giữ validation và rollback reload cũ. |
 | Learning & automation | Heartbeat worker, Manual/Automatic, PL mục tiêu, xác nhận flow test, cho phép ngoại lệ tự động và endpoint được phép. |
-| Nhật ký | Xem 100 sự kiện mới nhất từ Elasticsearch, lọc theo nguồn, tìm trong danh sách và mở JSON của từng sự kiện. |
+| Nhật ký | Tìm và lọc sự kiện trong các chỉ mục Elasticsearch được truy vấn, theo thời gian, nguồn, loại, HTTP, địa chỉ IP và đường dẫn. Kết quả phân trang; mở JSON để xem các trường đã giải mã và ngữ cảnh HAProxy được ghép theo request ID. |
 
 Policy được chỉnh thành bản nháp dùng chung giữa các màn hình. “Lưu và áp dụng” gửi `PUT /api/policy` kèm version. Khi lỗi, bản nháp được giữ; khi xung đột version, hủy bản nháp rồi làm mới. “Thu hồi” ngoại lệ chỉ vào bản nháp cho đến khi lưu. Nhãn learning lưu ngay sau khi xác nhận trong hộp thoại. Backend vẫn ghi audit, xuất policy JSON và reload tuning khi thay đổi. Không có thao tác tự hạ ngưỡng learning hoặc ép nâng PL.
 

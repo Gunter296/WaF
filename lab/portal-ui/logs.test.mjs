@@ -2,13 +2,22 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { fetchLogPage, logSearchRequest, normalizeLog } from "./logs.mjs";
 
-test("old HAProxy JSON in message is labelled HAProxy and retains original document", () => {
+test("old HAProxy JSON in message is decoded without duplicating the escaped envelope", () => {
   const raw = { "@timestamp": "2026-10-06T03:00:00Z", input: { type: "udp" }, message: JSON.stringify({ event: { dataset: "haproxy.access" }, source: { ip: "172.22.0.1" }, url: { path: "/api/lab/search" }, http: { response: { status_code: 403 } } }) };
   const row = normalizeLog(raw);
   assert.equal(row.portal.source_label, "HAProxy access");
   assert.equal(row.portal.ip, "172.22.0.1");
   assert.equal(row.portal.status, 403);
-  assert.equal(row.message, raw.message);
+  assert.equal(row.message, undefined);
+  assert.equal(row.event.dataset, "haproxy.access");
+});
+
+test("HAProxy lifecycle and malformed-request events get plain-language explanations", () => {
+  const stopped = normalizeLog({ input: { type: "udp" }, message: "Proxy lab_http stopped (cumulated conns: FE: 0, BE: 0)." });
+  assert.equal(stopped.portal.explanation, "Proxy “lab_http” đã dừng. HAProxy ghi nhận 0 kết nối đi vào (FE) và 0 kết nối tới backend (BE). Đây là thông báo trạng thái, không phải một yêu cầu bị chặn.");
+  const badRequest = normalizeLog({ input: { type: "udp" }, message: JSON.stringify({ http: { request: { method: "<BADREQ>" }, response: { status_code: 400 } }, source: { ip: "172.22.0.1" }, url: { path: "<BADREQ>" } }) });
+  assert.match(badRequest.portal.explanation, /dữ liệu không đúng định dạng HTTP/);
+  assert.equal(badRequest.portal.status, 400);
 });
 
 test("Caddy file and Coraza audit have explicit sources and rule classification", () => {
@@ -49,7 +58,10 @@ test("pagination and per-column filters are sent to Elasticsearch, not applied t
   assert.ok(body.query.bool.filter.some(item => item.bool?.should?.some(part => part.range?.["http.response.status_code"]?.gte === 403)));
   assert.ok(body.query.bool.filter.some(item => item.bool?.should?.some(part => part.bool?.filter?.some(clause => clause.term?.message === "403"))));
   assert.ok(body.query.bool.filter.some(item => item.bool?.should?.some(part => part.term?.["source.ip"] === "192.0.2.10")));
+  assert.ok(body.query.bool.filter.some(item => item.bool?.should?.some(part => part.bool?.filter?.some(clause => clause.match_phrase?.message === "942100"))));
   assert.ok(body.query.bool.must_not.some(item => item.term?.["url.path"] === "/healthz"));
+  assert.ok(body.query.bool.must_not.some(item => item.match_phrase?.message === "/healthz"));
+  assert.ok(body.query.bool.filter.some(item => item.bool?.should?.some(part => part.prefix?.logger === "http.log.access")));
   assert.throws(() => logSearchRequest(new URLSearchParams({ ip: "192.0" })), /complete IPv4 or IPv6/);
   assert.throws(() => logSearchRequest(new URLSearchParams({ page: "2" })), /missing log cursor/);
 });

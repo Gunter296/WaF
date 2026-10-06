@@ -644,8 +644,11 @@ h3 {
 }
 
 .logs-panel { min-width: 0 }
-.logs-table-wrap { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: auto }
-.logs-table { min-width: 1180px }
+.logs-table-wrap { display: block; width: 100%; max-width: 100%; overflow-x: scroll; overscroll-behavior-x: contain; scrollbar-width: auto; scrollbar-color: #58716f #172021 }
+.logs-table-wrap::-webkit-scrollbar { height: 12px }
+.logs-table-wrap::-webkit-scrollbar-track { background: #172021 }
+.logs-table-wrap::-webkit-scrollbar-thumb { background: #58716f; border: 3px solid #172021; border-radius: 8px }
+.logs-table { min-width: 1760px }
 .logs-table td { vertical-align: top }
 .logs-table td:nth-child(3) { min-width: 190px; max-width: 270px; white-space: normal; overflow-wrap: anywhere }
 .logs-table td:nth-child(4) { min-width: 150px; white-space: normal }
