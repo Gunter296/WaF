@@ -51,14 +51,13 @@ let policy, saved, learning = [],
 const routes = {
     overview: ['◈', 'Tổng quan', 'Tổng quan bảo mật', 'Cấu hình phòng thủ và các tín hiệu cần đánh giá trong workspace.'],
     findings: ['☷', 'Hàng đợi phân tích', 'Hàng đợi phân tích', 'Đối chiếu ứng viên learning với request ID trước khi xác nhận false positive.'],
-    policy: ['◇', 'WAF & CRS', 'Chính sách WAF & CRS', 'Điều khiển chế độ thực thi, paranoia level và virtual patch.'],
+    policy: ['◇', 'WAF & CRS', 'Chính sách WAF & CRS', 'Điều khiển chế độ WAF, paranoia level, virtual patch và ngoại lệ CRS.'],
     bots: ['◎', 'Bot & hành vi', 'Bot & hành vi bất thường', 'Phân loại User-Agent, giới hạn lưu lượng và xử lý hành vi theo IP.'],
     access: ['⊞', 'IP & quốc gia', 'Kiểm soát IP & quốc gia', 'Quản lý IP, CIDR và dữ liệu quốc gia mô phỏng của lab.'],
-    tuning: ['≋', 'Tuning rules', 'Tuning & ngoại lệ CRS', 'Ngoại lệ giới hạn theo website, rule, method, đường dẫn và tham số.'],
     automation: ['⟳', 'Learning & automation', 'Learning & automation', 'Duyệt bằng chứng và kiểm soát điều kiện thay đổi policy tự động.'],
     logs: ['≡', 'Nhật ký', 'Nhật ký hoạt động', 'Tra cứu log HAProxy, WAF và ứng dụng trong Elasticsearch.']
 };
-const currentRoute = () => Object.hasOwn(routes, location.hash.slice(1)) ? location.hash.slice(1) : 'overview';
+const currentRoute = () => location.hash.slice(1) === 'tuning' ? 'policy' : Object.hasOwn(routes, location.hash.slice(1)) ? location.hash.slice(1) : 'overview';
 const get = (obj, path) => path.split('.').reduce((o, k) => o?.[k], obj);
 
 function set(obj, path, value) {
@@ -261,7 +260,6 @@ function render() {
         policy: policyView,
         bots: botsView,
         access: accessView,
-        tuning: tuningView,
         automation: automationView,
         logs: logsView
     };
@@ -298,7 +296,7 @@ function overview() {
 }
 
 function policyView() {
-    return `<div class="equal-col">${panel('Chế độ & paranoia level',toggle('enabled','Bật các policy tùy chỉnh của lab')+grid(choice('mode','Chế độ WAF',[['On','On · Cho phép chặn'],['DetectionOnly','DetectionOnly · Ghi nhận']])+choice('blocking_pl','Blocking PL',[1,2,3,4])+choice('detection_pl','Detection PL',[1,2,3,4]))+'<p class="subtle">Tắt policy tùy chỉnh không tắt CRS. DetectionOnly ghi nhận thay vì chặn.</p>')}${panel('Virtual patch & fixture',toggle('cve_rules.CVE-2026-64642','CVE-2026-64642 · Middleware bypass')+toggle('cve_rules.CVE-2026-64645','CVE-2026-64645 · Rewrite SSRF')+toggle('crs_exclusions.sqli_search','Ngoại lệ 942100 tại /api/lab/search')+'<p class="subtle">Virtual patch khớp route fixture của lab. Ngoại lệ SQLi có thể làm bỏ sót tấn công tại endpoint này.</p>')}</div>${panel('Policy đang chỉnh sửa',`<details class="json-details"><summary>Xem toàn bộ JSON</summary><pre>${esc(JSON.stringify(policy,null,2))}</pre></details>`)}`;
+    return `<div class="equal-col">${panel('Chế độ & paranoia level',toggle('enabled','Bật các policy tùy chỉnh của lab')+grid(choice('mode','Chế độ WAF',[['On','On · Cho phép chặn'],['DetectionOnly','DetectionOnly · Ghi nhận']])+choice('blocking_pl','Blocking PL',[1,2,3,4])+choice('detection_pl','Detection PL',[1,2,3,4]))+'<p class="subtle">Tắt policy tùy chỉnh không tắt CRS. DetectionOnly ghi nhận thay vì chặn.</p>')}${panel('Virtual patch & fixture',toggle('cve_rules.CVE-2026-64642','CVE-2026-64642 · Middleware bypass')+toggle('cve_rules.CVE-2026-64645','CVE-2026-64645 · Rewrite SSRF')+toggle('crs_exclusions.sqli_search','Ngoại lệ 942100 tại /api/lab/search')+'<p class="subtle">Virtual patch khớp route fixture của lab. Ngoại lệ SQLi có thể làm bỏ sót tấn công tại endpoint này.</p>')}</div>${tuningView()}`;
 }
 
 function botsView() {
@@ -322,7 +320,7 @@ function accessView() {
 }
 
 function tuningView() {
-    return `<div class="hint">Ngoại lệ mới sẽ được lưu cùng policy khi bạn nhấn “Lưu và áp dụng”. Backend validate và reload Caddy; nếu reload lỗi, cấu hình đang chạy được giữ lại.</div><section class="panel"><div class="panel-head"><h2>Ngoại lệ CRS <span class="subtle">/ ${policy.tuning_rules.length}</span></h2><button class="primary" data-action="add-tuning">＋ Thêm ngoại lệ</button></div>${policy.tuning_rules.length?`<div class="table-wrap"><table><thead><tr><th>RULE / PHẠM VI</th><th>WEBSITE / ENDPOINT</th><th>LÝ DO</th><th>HẾT HẠN</th><th>TRẠNG THÁI</th><th></th></tr></thead><tbody>${policy.tuning_rules.map((r,i)=>`<tr><td><strong>${r.rule_id}</strong><br><span class="mono">${esc(r.target||'Toàn rule trên route')}</span></td><td>${esc(r.site)}<br><span class="mono">${esc(r.method)} ${esc(r.path)}</span></td><td>${esc(r.reason)}</td><td>${esc(date(r.expires_at))}</td><td>${badge(r.enabled===false?'Tạm tắt':new Date(r.expires_at)<new Date()?'Hết hạn':'Đang bật',r.enabled===false?'gray':'')}</td><td><div class="action-row"><button class="small" data-action="edit-tuning" data-index="${i}">Sửa</button><button class="small danger" data-action="remove-tuning" data-index="${i}">Thu hồi</button></div></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Chưa có ngoại lệ CRS.<br>Tạo ngoại lệ sau khi xác minh false positive.</div>'}</section>`;
+    return `<div class="hint">Tuning rules tạo ngoại lệ CRS có phạm vi hẹp theo website, rule, method, đường dẫn và tham số. Mọi thay đổi ở đây là bản nháp dùng chung với cấu hình WAF; nhấn “Lưu và áp dụng policy” để cập nhật. Ngoại lệ cần có lý do và thời hạn.</div><section class="panel"><div class="panel-head"><h2>Ngoại lệ CRS <span class="subtle">/ ${policy.tuning_rules.length}</span></h2><button class="primary" data-action="add-tuning">＋ Thêm ngoại lệ</button></div>${policy.tuning_rules.length?`<div class="table-wrap"><table><thead><tr><th>RULE / PHẠM VI</th><th>WEBSITE / ENDPOINT</th><th>LÝ DO</th><th>HẾT HẠN</th><th>TRẠNG THÁI</th><th></th></tr></thead><tbody>${policy.tuning_rules.map((r,i)=>`<tr><td><strong>${r.rule_id}</strong><br><span class="mono">${esc(r.target||'Toàn rule trên route')}</span></td><td>${esc(r.site)}<br><span class="mono">${esc(r.method)} ${esc(r.path)}</span></td><td>${esc(r.reason)}</td><td>${esc(date(r.expires_at))}</td><td>${badge(r.enabled===false?'Tạm tắt':new Date(r.expires_at)<new Date()?'Hết hạn':'Đang bật',r.enabled===false?'gray':'')}</td><td><div class="action-row"><button class="small" data-action="edit-tuning" data-index="${i}">Sửa</button><button class="small danger" data-action="remove-tuning" data-index="${i}">Thu hồi</button></div></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Chưa có ngoại lệ CRS.<br>Tạo ngoại lệ sau khi xác minh false positive.</div>'}</section>`;
 }
 
 function automationView() {
