@@ -646,18 +646,10 @@ h3 {
 .logs-panel { min-width: 0 }
 .logs-table-frame { width: 100%; max-width: 100%; overflow: hidden; border-bottom: 1px solid var(--border) }
 .logs-table-wrap { display: block; width: 100%; max-width: 100%; max-height: min(62vh, 720px); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #58716f #172021 }
-.logs-table-wrap::-webkit-scrollbar { height: 12px }
+.logs-table-wrap::-webkit-scrollbar { width: 10px; height: 10px }
 .logs-table-wrap::-webkit-scrollbar-track { background: #172021 }
-.logs-table-wrap::-webkit-scrollbar-thumb { background: #58716f; border: 3px solid #172021; border-radius: 8px }
+.logs-table-wrap::-webkit-scrollbar-thumb { background: #58716f; border: 2px solid #172021; border-radius: 8px }
 .logs-table { min-width: 1760px }
-.logs-scroll-control { display: grid; grid-template-columns: max-content minmax(160px, 1fr); align-items: center; gap: 16px; padding: 9px 18px; background: #141e1f }
-.logs-scroll-control label { color: var(--muted); font-size: 12px; white-space: nowrap }
-.logs-scroll-control input[type="range"] { appearance: none; width: 100%; height: 24px; margin: 0; padding: 0; background: transparent; cursor: ew-resize; accent-color: var(--mint) }
-.logs-scroll-control input[type="range"]::-webkit-slider-runnable-track { height: 8px; border: 1px solid #526867; border-radius: 8px; background: #253334 }
-.logs-scroll-control input[type="range"]::-webkit-slider-thumb { appearance: none; width: 44px; height: 18px; margin-top: -6px; border: 2px solid #102526; border-radius: 9px; background: var(--mint); box-shadow: 0 0 0 1px #00f5ff70 }
-.logs-scroll-control input[type="range"]::-moz-range-track { height: 8px; border: 1px solid #526867; border-radius: 8px; background: #253334 }
-.logs-scroll-control input[type="range"]::-moz-range-thumb { width: 40px; height: 14px; border: 2px solid #102526; border-radius: 9px; background: var(--mint); box-shadow: 0 0 0 1px #00f5ff70 }
-.logs-scroll-control input[type="range"]:focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; border-radius: 5px }
 .logs-table td { vertical-align: top }
 .logs-table td:nth-child(3) { min-width: 190px; max-width: 270px; white-space: normal; overflow-wrap: anywhere }
 .logs-table td:nth-child(4) { min-width: 150px; white-space: normal }
@@ -671,7 +663,6 @@ h3 {
 .logs-column-filters input,.logs-column-filters select { width: 100%; min-width: 0 }
 @media(max-width: 1250px) { .logs-column-filters { grid-template-columns: repeat(3, minmax(0, 1fr)) } }
 @media(max-width: 650px) { .logs-column-filters { grid-template-columns: repeat(2, minmax(0, 1fr)) } }
-@media(max-width: 520px) { .logs-scroll-control { grid-template-columns: 1fr; gap: 4px } }
 
 table {
     width: 100%;

@@ -350,7 +350,7 @@ function logRows() {
         const event = info.explanation || row?.event?.action || row?.rule?.id || (typeof row.message === 'string' ? row.message.slice(0, 140) : '') || 'request';
         const route = info.correlation?.haproxy?.route || row?.lab?.route || '';
         return `<tr><td>${esc(date(row?.['@timestamp']))}</td><td>${esc(info.source_label || 'Không rõ nguồn')}</td><td>${esc(event)}</td><td>${esc(info.category || 'Chưa phân loại')}${info.rules?.length ? `<br><span class="subtle">Rule ${esc(info.rules.join(', '))}</span>` : ''}${info.matches?.length ? `<br><span class="mono">${esc(info.matches[0])}</span>` : ''}</td><td><span class="mono">${esc(info.path || '')}</span><br><span class="subtle">${esc(info.ip || '')}</span>${route ? `<br><span class="subtle">Tuyến: ${esc(route)}</span>` : ''}</td><td>${info.blocked ? '<span class="status-badge denied">Đã chặn</span>' : esc(info.status ?? '—')}</td><td><details class="json-details"><summary>Xem JSON</summary><pre>${esc(JSON.stringify(row, null, 2))}</pre></details></td></tr>`;
-    }).join('')}</tbody></table></div><div class="logs-scroll-control"><label for="logs-scroll-slider">Cuộn ngang bảng nhật ký</label><input id="logs-scroll-slider" type="range" min="0" max="100" step="1" value="0" aria-label="Thanh cuộn ngang bảng nhật ký"></div></div><div class="table-footer"><span>Hiển thị ${Math.min((logsMeta.page - 1) * logsMeta.page_size + 1, logsMeta.total)}–${Math.min(logsMeta.page * logsMeta.page_size, logsMeta.total)} / ${fmt(logsMeta.total)}</span><div class="action-row"><button data-action="log-prev" ${logsMeta.page <= 1 ? 'disabled' : ''}>← Trước</button><button data-action="log-next" ${!logsMeta.next_after ? 'disabled' : ''}>Sau →</button></div></div></section>`;
+    }).join('')}</tbody></table></div></div><div class="table-footer"><span>Hiển thị ${Math.min((logsMeta.page - 1) * logsMeta.page_size + 1, logsMeta.total)}–${Math.min(logsMeta.page * logsMeta.page_size, logsMeta.total)} / ${fmt(logsMeta.total)}</span><div class="action-row"><button data-action="log-prev" ${logsMeta.page <= 1 ? 'disabled' : ''}>← Trước</button><button data-action="log-next" ${!logsMeta.next_after ? 'disabled' : ''}>Sau →</button></div></div></section>`;
 }
 
 function logsView() {
@@ -485,10 +485,6 @@ $('#content').addEventListener('change', e => {
     }
 });
 $('#content').addEventListener('input', e => {
-    if (e.target.id === 'logs-scroll-slider') {
-        const tableWrap = e.target.closest('.logs-table-frame')?.querySelector('.logs-table-wrap');
-        if (tableWrap) tableWrap.scrollLeft = (tableWrap.scrollWidth - tableWrap.clientWidth) * Number(e.target.value) / 100;
-    }
     if (e.target.id === 'search') {
         search = e.target.value;
         page = 1;
@@ -506,12 +502,6 @@ $('#content').addEventListener('input', e => {
         logSearchTimer = setTimeout(() => { if (currentRoute() === 'logs') void loadLogs(); }, 350);
     }
 });
-$('#content').addEventListener('scroll', e => {
-    if (!e.target.matches?.('.logs-table-wrap')) return;
-    const slider = e.target.closest('.logs-table-frame')?.querySelector('#logs-scroll-slider');
-    const maxScroll = e.target.scrollWidth - e.target.clientWidth;
-    if (slider && maxScroll > 0) slider.value = String(Math.round(e.target.scrollLeft / maxScroll * 100));
-}, true);
 $('#content').addEventListener('click', e => {
     const b = e.target.closest('[data-action]');
     if (!b) return;
