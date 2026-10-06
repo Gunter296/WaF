@@ -1863,3 +1863,21 @@ html[data-theme="dark"] th {
 html[data-theme="light"] .route-title {
     color: #9d173f;
 }
+
+html[data-theme="light"] .request-result.blocked {
+    color: #8f1730;
+    background: #ffe4e9;
+    border-color: #e8a5b4;
+}
+
+html[data-theme="light"] .request-result.rejected {
+    color: #815014;
+    background: #fff0d8;
+    border-color: #dfbf8a;
+}
+
+html[data-theme="light"] .request-result.allowed {
+    color: #176147;
+    background: #dff5e9;
+    border-color: #9bceb4;
+}
