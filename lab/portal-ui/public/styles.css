@@ -643,6 +643,23 @@ h3 {
     overflow: auto
 }
 
+.logs-panel { min-width: 0 }
+.logs-table-wrap { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: auto }
+.logs-table { min-width: 1180px }
+.logs-table td { vertical-align: top }
+.logs-table td:nth-child(3) { min-width: 190px; max-width: 270px; white-space: normal; overflow-wrap: anywhere }
+.logs-table td:nth-child(4) { min-width: 150px; white-space: normal }
+.logs-table td:nth-child(5) { min-width: 180px; max-width: 280px; white-space: normal; overflow-wrap: anywhere }
+.logs-table .json-details pre { max-width: 520px; white-space: pre-wrap; overflow-wrap: anywhere }
+.logs-toolbar label { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 11px }
+.logs-toolbar input[type="date"] { min-width: 145px; width: auto }
+.logs-help { margin: -5px 0 14px; font-size: 11px }
+.logs-column-filters { display: grid; grid-template-columns: repeat(6, minmax(125px, 1fr)); gap: 10px; margin: 0 0 14px }
+.logs-column-filters label { display: grid; gap: 5px; min-width: 0; color: var(--muted); font-size: 10px }
+.logs-column-filters input,.logs-column-filters select { width: 100%; min-width: 0 }
+@media(max-width: 1250px) { .logs-column-filters { grid-template-columns: repeat(3, minmax(0, 1fr)) } }
+@media(max-width: 650px) { .logs-column-filters { grid-template-columns: repeat(2, minmax(0, 1fr)) } }
+
 table {
     width: 100%;
     border-collapse: collapse;

@@ -14,11 +14,19 @@ filebeat.inputs:
   - type: udp
     host: "0.0.0.0:5140"
     max_message_size: 10KiB
-    codec: json
+    processors:
+      - decode_json_fields:
+          fields: ["message"]
+          target: ""
+          overwrite_keys: true
+          add_error_key: true
+          when:
+            regexp:
+              message: '^\s*\{'
 
 processors:
   - add_fields:
-      target: lab
+      target: labels
       fields:
         stack: finance-waf-lab
   - add_host_metadata: ~

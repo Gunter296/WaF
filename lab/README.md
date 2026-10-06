@@ -103,7 +103,7 @@ Mỗi lượt ghi JSONL, raw response và manifest riêng. Theo dõi 429/403, `R
 Filebeat gửi sự kiện vào chỉ mục `waf-lab-YYYY.MM.DD`. Lần đầu mở Kibana, tạo Data View `waf-lab-*` với timestamp `@timestamp`. Discover dùng các truy vấn KQL:
 
 ```text
-lab.stack : "finance-waf-lab"
+labels.stack : "finance-waf-lab"
 event.dataset : "waf.behavior"
 lab.route : "bypass"
 event.dataset : "finance.lab" and event.action : "login_simulation"
@@ -111,6 +111,8 @@ http.response.status_code >= 400
 ```
 
 Tạo dashboard từ Discover/Lens, nhóm theo `event.dataset`, `event.action`, `rule.id`, `http.response.status_code` và `lab.route`; dùng `http.request.id` để xem cùng request qua các nguồn log. Tạo Elasticsearch query alert cho `lab.route: bypass`, tăng 403/429, lỗi ingest và login thất bại; action email dùng SMTP `mailpit:1025`, rồi kiểm tra hộp thư tại port 8025. Kibana alert kiểm tra theo lịch, còn việc chặn request diễn ra đồng bộ tại WAF.
+
+Portal > Nhật ký truy vấn lịch sử theo ngày và phân trang trực tiếp từ Elasticsearch. Cột `NGÀY / GIỜ` là thời điểm của từng document. Bộ lọc `Nguồn còn lại` gom các dataset chưa nhận diện; tên dataset hoặc file cụ thể vẫn hiện trong cột Nguồn. JSON của log Coraza có trạng thái `portal.correlation.status`: `matched` khi tìm thấy log HAProxy cùng `http.request.id`, `not_found` khi có ID nhưng không có log khớp, hoặc `missing_request_id` khi log WAF thiếu ID. Khi khớp, `portal.correlation.haproxy` có IP client, method, path, HTTP status, route, backend và server; log Coraza vẫn giữ payload, rule và transaction. Hai log gốc vẫn là hai document riêng. Các request `/healthz` bị ẩn khỏi bảng nhật ký; health check không bị tắt.
 
 ## 5. Failover và khắc phục lỗi
 

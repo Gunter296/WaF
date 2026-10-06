@@ -1,7 +1,8 @@
 import {
     demoPolicy,
     demoLearning,
-    demoHealth
+    demoHealth,
+    demoLogs
 } from './demo.js';
 
 const $ = s => document.querySelector(s);
@@ -25,10 +26,23 @@ document.documentElement.dataset.theme = theme;
 let policy, saved, learning = [],
     health = {},
     logs = [],
+    logsMeta = { total: 0, page: 1, page_size: 25, pages: 1 },
     logsLoading = false,
     logsError = '',
     logQuery = '',
     logDataset = 'all',
+    logCategory = 'all',
+    logStatus = 'all',
+    logEvent = '',
+    logPath = '',
+    logIp = '',
+    logFrom = '',
+    logTo = '',
+    logPage = 1,
+    logPitId = '',
+    logCursors = [null],
+    logSearchTimer,
+    logRequestSeq = 0,
     dirty = false,
     busy = false,
     page = 1,
@@ -42,7 +56,7 @@ const routes = {
     access: ['⊞', 'IP & quốc gia', 'Kiểm soát IP & quốc gia', 'Quản lý IP, CIDR và dữ liệu quốc gia mô phỏng của lab.'],
     tuning: ['≋', 'Tuning rules', 'Tuning & ngoại lệ CRS', 'Ngoại lệ giới hạn theo website, rule, method, đường dẫn và tham số.'],
     automation: ['⟳', 'Learning & automation', 'Learning & automation', 'Duyệt bằng chứng và kiểm soát điều kiện thay đổi policy tự động.'],
-    logs: ['≡', 'Nhật ký', 'Nhật ký hoạt động', '100 sự kiện mới nhất do Filebeat gửi tới Elasticsearch.']
+    logs: ['≡', 'Nhật ký', 'Nhật ký hoạt động', 'Tra cứu log HAProxy, WAF và ứng dụng trong Elasticsearch.']
 };
 const currentRoute = () => Object.hasOwn(routes, location.hash.slice(1)) ? location.hash.slice(1) : 'overview';
 const get = (obj, path) => path.split('.').reduce((o, k) => o?.[k], obj);
@@ -108,17 +122,74 @@ async function load() {
     }
 }
 async function loadLogs() {
+    const requestSeq = ++logRequestSeq;
     logsLoading = true;
     logsError = '';
-    if (currentRoute() === 'logs') render();
+    if (currentRoute() === 'logs') refreshLogPanel();
     try {
-        logs = preview ? [] : await api('/api/logs');
+        const params = new URLSearchParams({ page: String(logPage), source: logDataset, category: logCategory, status: logStatus });
+        if (logPitId) params.set('pit', logPitId);
+        if (logPage > 1) params.set('after', JSON.stringify(logCursors[logPage - 1]));
+        if (logQuery.trim()) params.set('q', logQuery.trim());
+        if (logEvent.trim()) params.set('event', logEvent.trim());
+        if (logPath.trim()) params.set('path', logPath.trim());
+        if (logIp.trim()) params.set('ip', logIp.trim());
+        if (logFrom) params.set('from', new Date(`${logFrom}T00:00:00`).toISOString());
+        if (logTo) {
+            const end = new Date(`${logTo}T00:00:00`);
+            end.setDate(end.getDate() + 1);
+            params.set('to', end.toISOString());
+        }
+        const data = preview ? previewLogData() : await api(`/api/logs?${params}`);
+        if (requestSeq !== logRequestSeq) return;
+        logs = data.items;
+        logsMeta = data;
+        logPitId = data.pit_id || '';
     } catch (error) {
-        logsError = error.message;
+        if (requestSeq === logRequestSeq) {
+            if (logPage > 1 && /Elasticsearch returned 404/.test(error.message)) {
+                resetLogPaging();
+                notify('Phiên xem log đã hết hạn; đang tải lại trang đầu.', true);
+                void loadLogs();
+            } else logsError = error.message;
+        }
     } finally {
-        logsLoading = false;
-        if (currentRoute() === 'logs') render();
+        if (requestSeq === logRequestSeq) {
+            logsLoading = false;
+            if (currentRoute() === 'logs') refreshLogPanel();
+        }
     }
+}
+function resetLogPaging() {
+    logPage = 1;
+    logPitId = '';
+    logCursors = [null];
+}
+function previewLogData() {
+    const categoryNames = { sqli: 'SQL injection', xss: 'XSS', rce: 'RCE', lfi: 'LFI', ssrf: 'SSRF', cve: 'CVE-' };
+    const filtered = demoLogs.filter(row => {
+        const info = row.portal;
+        const group = info.source_group || 'other';
+        const day = new Date(row['@timestamp']).toLocaleDateString('sv-SE');
+        return (logDataset === 'all' || group === logDataset) &&
+            (logCategory === 'all' || (info.category || '').includes(categoryNames[logCategory])) &&
+            (logStatus === 'all' || (logStatus === '403' ? info.status === 403 : String(info.status).startsWith(logStatus[0]))) &&
+            (!logFrom || day >= logFrom) && (!logTo || day <= logTo) &&
+            (!logEvent || JSON.stringify(row.event || {}).toLowerCase().includes(logEvent.toLowerCase())) &&
+            (!logPath || info.path.toLowerCase().includes(logPath.toLowerCase())) &&
+            (!logIp || info.ip === logIp) &&
+            (!logQuery || JSON.stringify(row).toLowerCase().includes(logQuery.toLowerCase()));
+    });
+    const pageSize = 25;
+    const offset = (logPage - 1) * pageSize;
+    return { items: filtered.slice(offset, offset + pageSize), total: filtered.length, page: logPage,
+        page_size: pageSize, pages: Math.max(1, Math.ceil(filtered.length / pageSize)),
+        pit_id: 'preview', next_after: offset + pageSize < filtered.length ? ['preview', offset + pageSize] : null };
+}
+function refreshLogPanel() {
+    const panel = $('#content > .panel');
+    if (panel) panel.outerHTML = logRows();
+    else render();
 }
 async function save() {
     if (busy || !policy) return;
@@ -273,23 +344,20 @@ function findings() {
 function logRows() {
     if (logsLoading) return '<section class="panel empty">Đang tải nhật ký…</section>';
     if (logsError) return `<section class="panel empty">Không tải được nhật ký: ${esc(logsError)}</section>`;
-    const visible = logs.filter(row =>
-        (logDataset === 'all' || row?.event?.dataset === logDataset) &&
-        JSON.stringify(row || {}).toLowerCase().includes(logQuery.toLowerCase())
-    );
-    if (!visible.length) return '<section class="panel empty">Chưa có sự kiện phù hợp. Hãy tạo một request qua WAF rồi nhấn Làm mới.</section>';
-    return `<section class="panel"><div class="panel-head"><h2>Sự kiện gần đây <span class="subtle">/ ${visible.length}</span></h2><small>100 bản ghi mới nhất · lọc trong danh sách này</small></div><div class="table-wrap"><table><thead><tr><th>THỜI GIAN</th><th>NGUỒN</th><th>SỰ KIỆN</th><th>ĐƯỜNG DẪN / IP</th><th>HTTP</th><th>CHI TIẾT</th></tr></thead><tbody>${visible.map(row => {
-        const path = row?.url?.path || row?.lab?.path || '';
-        const ip = row?.source?.ip || row?.client?.ip || '';
-        const event = row?.event?.action || row?.message || row?.rule?.id || 'request';
-        const status = row?.http?.response?.status_code;
-        return `<tr><td>${esc(date(row?.['@timestamp']))}</td><td>${esc(row?.event?.dataset || 'khác')}</td><td>${esc(event)}</td><td><span class="mono">${esc(path)}</span><br><span class="subtle">${esc(ip)}</span></td><td>${esc(status ?? '—')}</td><td><details class="json-details"><summary>Xem JSON</summary><pre>${esc(JSON.stringify(row, null, 2))}</pre></details></td></tr>`;
-    }).join('')}</tbody></table></div></section>`;
+    if (!logs.length) return '<section class="panel empty">Không có sự kiện phù hợp trong khoảng ngày đã chọn. Thử mở rộng thời gian hoặc tạo request mới.</section>';
+    return `<section class="panel logs-panel"><div class="panel-head"><h2>Nhật ký <span class="subtle">/ ${fmt(logsMeta.total)}</span></h2><small>Trang ${logsMeta.page} / ${logsMeta.pages} · ${logsMeta.page_size} bản ghi/trang</small></div><div class="table-wrap logs-table-wrap" tabindex="0" role="region" aria-label="Bảng nhật ký cuộn ngang"><table class="logs-table"><thead><tr><th>NGÀY / GIỜ</th><th>NGUỒN</th><th>SỰ KIỆN</th><th>PHÂN LOẠI</th><th>ĐƯỜNG DẪN / IP</th><th>HTTP</th><th>CHI TIẾT</th></tr></thead><tbody>${logs.map(row => {
+        const info = row.portal || {};
+        const event = row?.event?.action || row?.rule?.id || (typeof row.message === 'string' ? row.message.slice(0, 140) : '') || 'request';
+        const route = info.correlation?.haproxy?.route || row?.lab?.route || '';
+        return `<tr><td>${esc(date(row?.['@timestamp']))}</td><td>${esc(info.source_label || 'Không rõ nguồn')}</td><td>${esc(event)}</td><td>${esc(info.category || 'Chưa phân loại')}${info.rules?.length ? `<br><span class="subtle">Rule ${esc(info.rules.join(', '))}</span>` : ''}${info.matches?.length ? `<br><span class="mono">${esc(info.matches[0])}</span>` : ''}</td><td><span class="mono">${esc(info.path || '')}</span><br><span class="subtle">${esc(info.ip || '')}</span>${route ? `<br><span class="subtle">Tuyến: ${esc(route)}</span>` : ''}</td><td>${esc(info.status ?? '—')}</td><td><details class="json-details"><summary>Xem JSON</summary><pre>${esc(JSON.stringify(row, null, 2))}</pre></details></td></tr>`;
+    }).join('')}</tbody></table></div><div class="table-footer"><span>Hiển thị ${Math.min((logsMeta.page - 1) * logsMeta.page_size + 1, logsMeta.total)}–${Math.min(logsMeta.page * logsMeta.page_size, logsMeta.total)} / ${fmt(logsMeta.total)}</span><div class="action-row"><button data-action="log-prev" ${logsMeta.page <= 1 ? 'disabled' : ''}>← Trước</button><button data-action="log-next" ${!logsMeta.next_after ? 'disabled' : ''}>Sau →</button></div></div></section>`;
 }
 
 function logsView() {
-    const datasets = [...new Set(logs.map(row => row?.event?.dataset).filter(Boolean))].sort();
-    return `<div class="toolbar"><input id="log-search" type="search" aria-label="Tìm trong nhật ký" placeholder="Tìm request ID, IP, rule, đường dẫn…" value="${esc(logQuery)}"><select id="log-dataset" aria-label="Lọc nguồn nhật ký"><option value="all">Tất cả nguồn</option>${datasets.map(dataset => `<option value="${esc(dataset)}" ${logDataset===dataset?'selected':''}>${esc(dataset)}</option>`).join('')}</select></div>${logRows()}`;
+    const sources = [['all','Tất cả nguồn'],['haproxy','HAProxy'],['waf','WAF / Coraza'],['finance','Finance'],['portal','Portal'],['other','Nguồn còn lại']];
+    const categories = [['all','Mọi loại'],['sqli','SQL injection'],['xss','XSS'],['rce','RCE'],['lfi','LFI'],['ssrf','SSRF'],['cve','CVE']];
+    const statuses = [['all','Mọi HTTP'],['2xx','2xx'],['3xx','3xx'],['4xx','4xx'],['5xx','5xx'],['403','403']];
+    return `<div class="toolbar logs-toolbar"><input id="log-search" type="search" aria-label="Tìm trong nhật ký" placeholder="Tìm request ID, IP, rule, đường dẫn…" value="${esc(logQuery)}"><label>Từ ngày <input id="log-from" type="date" value="${esc(logFrom)}"></label><label>Đến ngày <input id="log-to" type="date" value="${esc(logTo)}"></label></div><div class="logs-column-filters" aria-label="Lọc theo cột"><label>Nguồn<select id="log-dataset" aria-label="Lọc nguồn nhật ký">${sources.map(([value,label]) => `<option value="${value}" ${logDataset===value?'selected':''}>${label}</option>`).join('')}</select></label><label>Sự kiện<input id="log-event" type="search" placeholder="Tên sự kiện" value="${esc(logEvent)}"></label><label>Payload / CVE<select id="log-category">${categories.map(([value,label]) => `<option value="${value}" ${logCategory===value?'selected':''}>${label}</option>`).join('')}</select></label><label>Đường dẫn<input id="log-path" type="search" placeholder="/api/..." value="${esc(logPath)}"></label><label>IP<input id="log-ip" type="search" placeholder="IP chính xác" value="${esc(logIp)}"></label><label>HTTP<select id="log-status">${statuses.map(([value,label]) => `<option value="${value}" ${logStatus===value?'selected':''}>${label}</option>`).join('')}</select></label></div><p class="subtle logs-help">“Nguồn còn lại” gồm file hoặc dataset chưa thuộc các nhóm trên; tên file/dataset cụ thể hiển thị ở cột Nguồn. Phân loại dựa trên rule, tag hoặc CVE trong log WAF. Mở JSON log WAF để xem IP, route và backend HAProxy liên kết bằng request ID.</p>${logRows()}`;
 }
 
 function dialog(title, html, onSubmit) {
@@ -400,9 +468,20 @@ $('#content').addEventListener('change', e => {
         page = 1;
         render();
     }
-    if (t.id === 'log-dataset') {
-        logDataset = t.value;
-        $('#content > .panel').outerHTML = logRows();
+    if (t.id === 'log-dataset' || t.id === 'log-category' || t.id === 'log-status') {
+        clearTimeout(logSearchTimer);
+        if (t.id === 'log-dataset') logDataset = t.value;
+        if (t.id === 'log-category') logCategory = t.value;
+        if (t.id === 'log-status') logStatus = t.value;
+        resetLogPaging();
+        void loadLogs();
+    }
+    if (t.id === 'log-from' || t.id === 'log-to') {
+        clearTimeout(logSearchTimer);
+        logFrom = $('#log-from').value;
+        logTo = $('#log-to').value;
+        resetLogPaging();
+        void loadLogs();
     }
 });
 $('#content').addEventListener('input', e => {
@@ -413,9 +492,14 @@ $('#content').addEventListener('input', e => {
         template.innerHTML = findings();
         $('#content > .panel').replaceWith(template.content.querySelector('.panel'));
     }
-    if (e.target.id === 'log-search') {
-        logQuery = e.target.value;
-        $('#content > .panel').outerHTML = logRows();
+    if (['log-search','log-event','log-path','log-ip'].includes(e.target.id)) {
+        if (e.target.id === 'log-search') logQuery = e.target.value;
+        if (e.target.id === 'log-event') logEvent = e.target.value;
+        if (e.target.id === 'log-path') logPath = e.target.value;
+        if (e.target.id === 'log-ip') logIp = e.target.value;
+        resetLogPaging();
+        clearTimeout(logSearchTimer);
+        logSearchTimer = setTimeout(() => { if (currentRoute() === 'logs') void loadLogs(); }, 350);
     }
 });
 $('#content').addEventListener('click', e => {
@@ -444,6 +528,16 @@ $('#content').addEventListener('click', e => {
             page++;
             render();
             break;
+        case 'log-prev':
+            logPage = Math.max(1, logPage - 1);
+            void loadLogs();
+            break;
+        case 'log-next':
+            if (!logsMeta.next_after) break;
+            logCursors[logPage] = logsMeta.next_after;
+            logPage++;
+            void loadLogs();
+            break;
         case 'export': {
             const blob = new Blob([JSON.stringify(learning.filter(r => (filter === 'all' || r.status === filter) && JSON.stringify(r).toLowerCase().includes(search.toLowerCase())), null, 2)], {
                 type: 'application/json'
@@ -459,7 +553,7 @@ $('#content').addEventListener('click', e => {
 });
 $('#refresh').onclick = () => {
     if (!dirty) $('#notice').hidden = true;
-    if (currentRoute() === 'logs') loadLogs();
+    if (currentRoute() === 'logs') { resetLogPaging(); loadLogs(); }
     else load();
 };
 $('#save').onclick = save;
@@ -488,7 +582,7 @@ setTheme(theme);
 window.addEventListener('hashchange', () => {
     document.body.classList.remove('menu-open');
     render();
-    if (currentRoute() === 'logs') void loadLogs();
+    if (currentRoute() === 'logs') { resetLogPaging(); void loadLogs(); }
     window.scrollTo(0, 0);
 });
 window.addEventListener('beforeunload', e => {

@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { normalizeTuning, renderTuning } from "./tuning.mjs";
 import { normalizeIPPolicy, renderIPPolicy } from "./ip-policy.mjs";
 import { promotionDecision, rollbackDecision } from "./automation.mjs";
+import { fetchLogPage } from "./logs.mjs";
 
 const port = Number(process.env.PORT || 8090);
 const policyFile = process.env.POLICY_FILE || "/shared/policy.json";
@@ -39,16 +40,8 @@ async function log(action, details = {}) {
   await appendFile(logFile, `${JSON.stringify(event)}\n`).catch(() => {});
 }
 
-async function recentLogs() {
-  const response = await fetch(`${elasticsearchUrl}/waf-lab-*/_search?allow_no_indices=true&ignore_unavailable=true`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ size: 100, sort: [{ "@timestamp": { order: "desc", unmapped_type: "date" } }], query: { match_all: {} } }),
-    signal: AbortSignal.timeout(10000)
-  });
-  if (!response.ok) throw new Error(`Elasticsearch returned ${response.status}`);
-  const result = await response.json();
-  return (result.hits?.hits || []).map(hit => hit._source || {});
+async function recentLogs(params) {
+  return fetchLogPage(params, elasticsearchUrl);
 }
 
 async function ensureStorage() {
@@ -331,7 +324,9 @@ const server = http.createServer(async (req, res) => {
       const saved = await serialize(() => savePolicy(incoming)); sendJson(res, 200, saved); return;
     }
     if (req.url === "/api/learning" && req.method === "GET") { sendJson(res, 200, await learningRows()); return; }
-    if (req.url === "/api/logs" && req.method === "GET") { sendJson(res, 200, await recentLogs()); return; }
+    if (new URL(req.url, "http://localhost").pathname === "/api/logs" && req.method === "GET") {
+      sendJson(res, 200, await recentLogs(new URL(req.url, "http://localhost").searchParams)); return;
+    }
     if (req.url === "/api/learning/blockers" && req.method === "GET") {
       sendJson(res, 200, { open_severe: await hasOpenSevere((await currentPolicy()).document) }); return;
     }

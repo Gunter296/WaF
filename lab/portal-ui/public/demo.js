@@ -145,3 +145,20 @@ export const demoHealth = {
     worker_last_seen: new Date(now - 24000).toISOString(),
     automation: demoPolicy.automation
 };
+
+const demoLogSamples = [
+    { '@timestamp': new Date(now - 30000).toISOString(), event: { dataset: 'coraza.audit' }, transaction: { id: 'demo-request-0001', messages: [{ message: 'SQL Injection Attack', details: { ruleId: 942100, match: 'Matched ARGS:q' } }] }, portal: { source_label: 'Coraza audit', source_group: 'waf', category: 'SQL injection', rules: ['942100'], matches: ['Matched ARGS:q'], path: '/api/lab/search', ip: '192.0.2.10', status: 403 } },
+    { '@timestamp': new Date(now - 32000).toISOString(), event: { dataset: 'haproxy.access', action: 'request' }, http: { request: { id: 'demo-request-0001' }, response: { status_code: 403 } }, portal: { source_label: 'HAProxy access', source_group: 'haproxy', category: null, rules: [], matches: [], path: '/api/lab/search', ip: '192.0.2.10', status: 403 } }
+];
+export const demoLogs = Array.from({ length: 30 }, (_, index) => {
+    const row = structuredClone(demoLogSamples[index % demoLogSamples.length]);
+    row['@timestamp'] = new Date(now - 30000 - Math.floor(index / 2) * 86400000 - (index % 2) * 2000).toISOString();
+    const requestId = `demo-request-${String(Math.floor(index / 2) + 1).padStart(4, '0')}`;
+    if (row.transaction) row.transaction.id = requestId;
+    if (row.http?.request) row.http.request.id = requestId;
+    if (row.transaction) row.portal.correlation = { request_id: requestId, haproxy: {
+        request_id: requestId, client_ip: row.portal.ip, method: 'GET', path: row.portal.path,
+        status: row.portal.status, route: 'waf', backend: 'finance_waf_with_fallback', server: 'waf'
+    } };
+    return row;
+});

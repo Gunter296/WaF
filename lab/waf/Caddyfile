@@ -10,6 +10,7 @@
         output file /var/log/lab/waf-access.jsonl
         format json
     }
+    log_skip @health
 
     route {
     	respond @health "ok" 200
