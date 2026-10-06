@@ -27,6 +27,7 @@ let policy, saved, learning = [],
     health = {},
     logs = [],
     logsMeta = { total: 0, page: 1, page_size: 25, pages: 1 },
+    logsRenderSignature = '',
     logsLoading = false,
     logsError = '',
     logQuery = '',
@@ -120,11 +121,15 @@ async function load() {
         $('#refresh').disabled = false;
     }
 }
-async function loadLogs() {
+async function loadLogs({ quiet = false } = {}) {
+    if (quiet && logsLoading) return;
     const requestSeq = ++logRequestSeq;
     logsLoading = true;
-    logsError = '';
-    if (currentRoute() === 'logs') refreshLogPanel();
+    if (!quiet) {
+        logsError = '';
+        if (currentRoute() === 'logs') refreshLogPanel();
+    }
+    let changed = false;
     try {
         const params = new URLSearchParams({ page: String(logPage), source: logDataset, category: logCategory, status: logStatus });
         if (logPitId) params.set('pit', logPitId);
@@ -141,6 +146,10 @@ async function loadLogs() {
         }
         const data = preview ? previewLogData() : await api(`/api/logs?${params}`);
         if (requestSeq !== logRequestSeq) return;
+        const signature = JSON.stringify({ items: data.items, total: data.total, page: data.page,
+            page_size: data.page_size, pages: data.pages, next_after: data.next_after });
+        changed = signature !== logsRenderSignature;
+        logsRenderSignature = signature;
         logs = data.items;
         logsMeta = data;
         logPitId = data.pit_id || '';
@@ -150,12 +159,12 @@ async function loadLogs() {
                 resetLogPaging();
                 notify('Phiên xem log đã hết hạn; đang tải lại trang đầu.', true);
                 void loadLogs();
-            } else logsError = error.message;
+            } else if (!quiet || !logs.length) logsError = error.message;
         }
     } finally {
         if (requestSeq === logRequestSeq) {
             logsLoading = false;
-            if (currentRoute() === 'logs') refreshLogPanel();
+            if (currentRoute() === 'logs' && (!quiet || changed || !logs.length)) refreshLogPanel();
         }
     }
 }
@@ -187,8 +196,20 @@ function previewLogData() {
 }
 function refreshLogPanel() {
     const panel = $('#content > .panel');
-    if (panel) panel.outerHTML = logRows();
-    else render();
+    if (!panel) { render(); return; }
+    const table = panel.querySelector('.logs-table-wrap');
+    const scroll = table ? { top: table.scrollTop, left: table.scrollLeft } : null;
+    const openKeys = [...panel.querySelectorAll('.json-details[open]')].map(details => details.dataset.logKey);
+    panel.outerHTML = logRows();
+    const nextPanel = $('#content > .panel');
+    const nextTable = nextPanel?.querySelector('.logs-table-wrap');
+    if (scroll && nextTable) {
+        nextTable.scrollTop = scroll.top;
+        nextTable.scrollLeft = scroll.left;
+    }
+    for (const details of nextPanel?.querySelectorAll('.json-details[data-log-key]') || []) {
+        if (openKeys.includes(details.dataset.logKey)) details.open = true;
+    }
 }
 async function save() {
     if (busy || !policy) return;
@@ -343,11 +364,12 @@ function logRows() {
     if (logsLoading) return '<section class="panel empty">Đang tải nhật ký…</section>';
     if (logsError) return `<section class="panel empty">Không tải được nhật ký: ${esc(logsError)}</section>`;
     if (!logs.length) return '<section class="panel empty">Không có sự kiện phù hợp trong khoảng ngày đã chọn. Thử mở rộng thời gian hoặc tạo request mới.</section>';
-    return `<section class="panel logs-panel"><div class="panel-head"><h2>Nhật ký <span class="subtle">/ ${fmt(logsMeta.total)}</span></h2><small>Trang ${logsMeta.page} / ${logsMeta.pages} · ${logsMeta.page_size} bản ghi/trang</small></div><div class="logs-table-frame"><div class="table-wrap logs-table-wrap" tabindex="0" role="region" aria-label="Bảng nhật ký cuộn ngang"><table class="logs-table"><thead><tr><th>NGÀY / GIỜ</th><th>NGUỒN</th><th>SỰ KIỆN</th><th>PHÂN LOẠI</th><th>ĐƯỜNG DẪN / IP</th><th>HTTP</th><th>CHI TIẾT</th></tr></thead><tbody>${logs.map(row => {
+    return `<section class="panel logs-panel"><div class="panel-head"><h2>Nhật ký <span class="subtle">/ ${fmt(logsMeta.total)}</span></h2><small>Trang ${logsMeta.page} / ${logsMeta.pages} · ${logsMeta.page_size} bản ghi/trang</small></div><div class="logs-table-frame"><div class="table-wrap logs-table-wrap" tabindex="0" role="region" aria-label="Bảng nhật ký cuộn ngang"><table class="logs-table"><thead><tr><th>NGÀY / GIỜ</th><th>NGUỒN</th><th>SỰ KIỆN</th><th>PHÂN LOẠI</th><th>ĐƯỜNG DẪN / IP</th><th>HTTP</th><th>CHI TIẾT</th></tr></thead><tbody>${logs.map((row, index) => {
         const info = row.portal || {};
         const event = info.explanation || row?.event?.action || row?.rule?.id || (typeof row.message === 'string' ? row.message.slice(0, 140) : '') || 'request';
         const route = info.correlation?.haproxy?.route || row?.lab?.route || '';
-        return `<tr><td>${esc(date(row?.['@timestamp']))}</td><td>${esc(info.source_label || 'Không rõ nguồn')}</td><td>${esc(event)}</td><td>${esc(info.category || 'Chưa phân loại')}${info.rules?.length ? `<br><span class="subtle">Rule ${esc(info.rules.join(', '))}</span>` : ''}${info.matches?.length ? `<br><span class="mono">${esc(info.matches[0])}</span>` : ''}</td><td><span class="mono">${esc(info.path || '')}</span><br><span class="subtle">${esc(info.ip || '')}</span>${route ? `<br><span class="subtle">Tuyến: ${esc(route)}</span>` : ''}</td><td>${info.blocked ? '<span class="status-badge denied">Đã chặn</span>' : esc(info.status ?? '—')}</td><td><details class="json-details"><summary>Xem JSON</summary><pre>${esc(JSON.stringify(row, null, 2))}</pre></details></td></tr>`;
+        const rowKey = info.correlation?.request_id || row.transaction?.id || `${row?.['@timestamp'] || ''}:${index}`;
+        return `<tr><td>${esc(date(row?.['@timestamp']))}</td><td>${esc(info.source_label || 'Không rõ nguồn')}</td><td>${esc(event)}</td><td>${esc(info.category || 'Chưa phân loại')}${info.rules?.length ? `<br><span class="subtle">Rule ${esc(info.rules.join(', '))}</span>` : ''}${info.matches?.length ? `<br><span class="mono">${esc(info.matches[0])}</span>` : ''}</td><td><span class="mono">${esc(info.path || '')}</span><br><span class="subtle">${esc(info.ip || '')}</span>${route ? `<br><span class="subtle">Tuyến: ${esc(route)}</span>` : ''}</td><td>${info.blocked ? '<span class="status-badge denied">Đã chặn</span>' : esc(info.status ?? '—')}</td><td><details class="json-details" data-log-key="${esc(rowKey)}"><summary>Xem JSON</summary><pre>${esc(JSON.stringify(row, null, 2))}</pre></details></td></tr>`;
     }).join('')}</tbody></table></div></div><div class="table-footer"><span>Hiển thị ${Math.min((logsMeta.page - 1) * logsMeta.page_size + 1, logsMeta.total)}–${Math.min(logsMeta.page * logsMeta.page_size, logsMeta.total)} / ${fmt(logsMeta.total)}</span><div class="action-row"><button data-action="log-prev" ${logsMeta.page <= 1 ? 'disabled' : ''}>← Trước</button><button data-action="log-next" ${!logsMeta.next_after ? 'disabled' : ''}>Sau →</button></div></div></section>`;
 }
 
@@ -577,6 +599,15 @@ function setTheme(next) {
 }
 $('#theme-toggle').onclick = () => setTheme(theme === 'dark' ? 'light' : 'dark');
 setTheme(theme);
+function pollLatestLogs() {
+    if (currentRoute() !== 'logs' || document.hidden || preview || logsLoading || logPage !== 1) return;
+    resetLogPaging();
+    void loadLogs({ quiet: true });
+}
+setInterval(pollLatestLogs, 5000);
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) pollLatestLogs();
+});
 window.addEventListener('hashchange', () => {
     document.body.classList.remove('menu-open');
     render();
