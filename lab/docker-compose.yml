@@ -8,6 +8,7 @@ services:
       - "127.0.0.1:8080:8080"
     volumes:
       - ./edge/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./edge/route.map:/usr/local/etc/haproxy/route.map:ro
       - ./runtime/logs:/var/log/lab
     networks:
       frontend:
@@ -64,6 +65,7 @@ services:
       context: ./finance
       args:
         NEXT_VERSION: 16.2.10
+        LAB_BUILD: vulnerable
     restart: unless-stopped
     environment:
       LAB_BUILD: vulnerable
@@ -87,6 +89,7 @@ services:
       context: ./finance
       args:
         NEXT_VERSION: 16.2.11
+        LAB_BUILD: patched
     restart: unless-stopped
     environment:
       LAB_BUILD: patched

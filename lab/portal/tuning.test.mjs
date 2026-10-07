@@ -7,11 +7,12 @@ const valid = { id: "11111111-1111-4111-8111-111111111111", rule_id: 942100, pat
 
 test("renders a scoped runtime exclusion before CRS", () => {
   const rules = normalizeTuning([valid], now);
-  assert.match(renderTuning(rules, now), /ruleRemoveTargetById=942100;ARGS:q/);
-  assert.match(renderTuning(rules, now), /REQUEST_FILENAME "@streq \/api\/lab\/search"/);
-  assert.match(renderTuning(rules, now), /REQUEST_METHOD "@streq GET"/);
-  assert.match(renderTuning(rules, now), /REQUEST_HEADERS:Host/);
-  assert.match(renderTuning(rules, now), /TIME_EPOCH "@lt /);
+  const lines = renderTuning(rules, now).trim().split("\n");
+  assert.match(lines[1], /REQUEST_FILENAME "@streq \/api\/lab\/search"/);
+  assert.doesNotMatch(lines[1], /ctl:ruleRemoveTargetById/);
+  assert.match(lines[2], /REQUEST_METHOD "@streq GET"/);
+  assert.match(lines[3], /REQUEST_HEADERS:Host/);
+  assert.match(lines[4], /TIME_EPOCH "@lt .*ctl:ruleRemoveTargetById=942100;ARGS:q/);
 });
 
 test("rejects directive injection and broad scope", () => {

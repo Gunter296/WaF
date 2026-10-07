@@ -303,10 +303,13 @@ func (h *Handler) allowBotRequest(ip string, requests, seconds int) bool {
 func (h *Handler) decide(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler, mode string, status int, id, ip, rule, reason string) error {
 	if strings.EqualFold(mode, "DetectionOnly") || strings.EqualFold(mode, "detect") || strings.EqualFold(mode, "observe") {
 		h.event("behavior", id, ip, rule, "observe", reason)
+		w.Header().Set("X-WAF-Lab-Rule", rule)
+		w.Header().Set("X-WAF-Lab-Decision", "observe")
 		return next.ServeHTTP(w, r)
 	}
 	h.event("blocked", id, ip, rule, "block", reason)
 	w.Header().Set("X-WAF-Lab-Rule", rule)
+	w.Header().Set("X-WAF-Lab-Decision", "block")
 	if status == http.StatusTooManyRequests { w.Header().Set("Retry-After", "10") }
 	http.Error(w, http.StatusText(status), status)
 	return nil

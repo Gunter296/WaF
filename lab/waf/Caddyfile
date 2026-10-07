@@ -14,7 +14,7 @@
 
     route {
     	respond @health "ok" 200
-        lab_policy */etc/waf-lab/policy.json
+        lab_policy * /etc/waf-lab/policy.json
         coraza_waf {
             load_owasp_crs
             tx_id_req_header "X-Request-ID"

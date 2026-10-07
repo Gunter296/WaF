@@ -78,14 +78,26 @@ Fixture mặc định ánh xạ `.10` thành `VN`, `.20` thành `US`. Trong port
 
 ### Kiểm thử các policy hành vi
 
+Corpus traffic hợp lệ gồm search, file fixture, upload JSON và command marker không thực thi lệnh. Dùng cùng template với direct baseline rồi qua WAF ở từng mode; mỗi response kỳ vọng có status 200 và marker cụ thể. `direct.localhost` được ghi `lab.route=bypass` cùng backend `finance_direct`; `localhost` cần kiểm tra `lab.backend`/`lab.server` để loại lượt failover khỏi phép đo WAF:
+
+```powershell
+.\lab\scripts\run-nuclei.ps1 -RunName benign-direct -HostName direct.localhost -WafMode 'N/A' -Templates @('valid-traffic-corpus.yaml','simulated-command-injection.yaml') -RateLimit 1
+# Chuyển mode trong portal, rồi chạy lại cùng template với tên lượt khác:
+.\lab\scripts\run-nuclei.ps1 -RunName benign-detection -HostName localhost -WafMode DetectionOnly -Templates @('valid-traffic-corpus.yaml','simulated-command-injection.yaml') -RateLimit 1
+.\lab\scripts\run-nuclei.ps1 -RunName benign-on -HostName localhost -WafMode On -Templates @('valid-traffic-corpus.yaml','simulated-command-injection.yaml') -RateLimit 1
+```
+
+`positive-security-policy.yaml` kiểm tra một POST JSON được phép và các request sai bị policy URL/method/content-type/parameter/file-extension/JSON từ chối. Đây là allowlist fixture tĩnh; XML chưa được thêm vì lab không có endpoint XML. Với request bị từ chối, đối chiếu Coraza audit theo `X-Request-ID` để xác định rule thay vì chỉ dựa vào HTTP 403.
+
 Bot detection dùng thư viện Go nguồn mở [mileusna/useragent](https://github.com/mileusna/useragent) phiên bản `v1.3.5` để phân loại User-Agent và bộ giới hạn token bucket nguồn mở [golang.org/x/time/rate](https://pkg.go.dev/golang.org/x/time/rate) `v0.16.0` để xử lý spam request ngay tại WAF. Trong portal mặc định `/advanced` hoặc giao diện mới `#bots`, bật bot detection, đặt `unique_paths=8`, `window_seconds=30`, `spam_requests=10`, `spam_window_seconds=10`, `action=block`, giữ WAF `On`, rồi chạy từng template riêng ngay sau khi cửa sổ đếm cũ hết:
 
 ```powershell
 .\lab\scripts\run-nuclei.ps1 -RunName bot-fanout -HostName localhost -WafMode On -Templates @('behavior-bot-declared-fanout.yaml') -RateLimit 2
 .\lab\scripts\run-nuclei.ps1 -RunName bot-spam -HostName localhost -WafMode On -Templates @('behavior-bot-spam.yaml') -RateLimit 10
+.\lab\scripts\run-nuclei.ps1 -RunName bot-normal -HostName localhost -WafMode On -Templates @('behavior-bot-normal-profile.yaml') -RateLimit 2
 ```
 
-Template fanout cần đủ tám đường dẫn khác nhau trong 30 giây. Template spam lặp một đường dẫn; WAF trả 429 khi hết token trong bucket. Đối chiếu `rule.id=bot_declared_fanout` hoặc `bot_request_rate`, `http.request.id` và `lab.route=waf` trong Kibana. Khi đặt `action=observe` hoặc WAF `DetectionOnly`, request đi tiếp và template chặn sẽ không tạo finding; xem log `waf.behavior` để xác nhận ghi nhận. User-Agent là dữ liệu do client gửi, nên đây là phân loại tự khai báo, không xác thực danh tính Googlebot. Bot giấu User-Agent vẫn chịu giới hạn request chung của `rate_limit`.
+Template fanout cần đủ tám đường dẫn khác nhau trong 30 giây. Template spam lặp một đường dẫn; blocking trả 429 khi hết token trong bucket. Đối chiếu `rule.id=bot_declared_fanout` hoặc `bot_request_rate`, response header `X-WAF-Lab-Decision: observe|block`, `http.request.id` và `lab.route=waf` trong Kibana. Khi action là `observe` hoặc WAF `DetectionOnly`, request đi tiếp và header cho biết chỉ ghi nhận; trong blocking header cho biết quyết định chặn. Template `behavior-bot-normal-profile.yaml` gửi hai request hợp lệ với User-Agent kiểu browser để kiểm tra không bị policy chặn. Cả browser-style và Googlebot User-Agent đều là dữ liệu tự khai báo, không xác minh danh tính người hay bot. Bot giấu User-Agent vẫn chịu giới hạn request chung của `rate_limit`.
 
 CRS 4.25.0 đã có nhóm `REQUEST-913-SCANNER-DETECTION.conf`; rule `913100` ở PL1 nhận diện User-Agent `nuclei` trong danh sách scanner. Không có file rule 913 riêng trong repo vì `load_owasp_crs` nạp CRS nhúng vào Caddy. Để quan sát, đặt WAF `On`, PL1, gửi một request với User-Agent `nuclei` qua `localhost:8080`, so với Host `direct.localhost`, rồi tìm rule ID `913100` và request ID trong audit Coraza. Đây chỉ là tín hiệu User-Agent, không ngăn scanner đổi User-Agent. Các bộ đếm rate, 404 và fanout trong module policy mới xử lý hành vi nhiều request. Nếu quét Nuclei để đo các CVE qua WAF, ghi nhận việc CRS chặn scanner trước khi probe đến ứng dụng; finding vắng mặt không tự chứng minh virtual patch đã chặn payload.
 
@@ -106,11 +118,12 @@ Filebeat gửi sự kiện vào chỉ mục `waf-lab-YYYY.MM.DD`. Lần đầu m
 labels.stack : "finance-waf-lab"
 event.dataset : "waf.behavior"
 lab.route : "bypass"
+lab.route : "bypass" and lab.backend : "finance_waf_with_fallback" and lab.server : "finance-fallback"
 event.dataset : "finance.lab" and event.action : "login_simulation"
 http.response.status_code >= 400
 ```
 
-Tạo dashboard từ Discover/Lens, nhóm theo `event.dataset`, `event.action`, `rule.id`, `http.response.status_code` và `lab.route`; dùng `http.request.id` để xem cùng request qua các nguồn log. Tạo Elasticsearch query alert cho `lab.route: bypass`, tăng 403/429, lỗi ingest và login thất bại; action email dùng SMTP `mailpit:1025`, rồi kiểm tra hộp thư tại port 8025. Kibana alert kiểm tra theo lịch, còn việc chặn request diễn ra đồng bộ tại WAF.
+Tạo dashboard từ Discover/Lens, nhóm theo `event.dataset`, `event.action`, `rule.id`, `http.response.status_code` và `lab.route`; dùng `http.request.id` để xem cùng request qua các nguồn log. `lab.route=bypass` gồm cả baseline `finance_direct/finance`; để cảnh báo failover riêng, lọc thêm backend `finance_waf_with_fallback` và server `finance-fallback`. Tạo Elasticsearch query alert cho failover, tăng 403/429, lỗi ingest và login thất bại; action email dùng SMTP `mailpit:1025`, rồi kiểm tra hộp thư tại port 8025. Kibana alert kiểm tra theo lịch, còn việc chặn request diễn ra đồng bộ tại WAF.
 
 Portal > Nhật ký truy vấn lịch sử theo ngày và phân trang trực tiếp từ Elasticsearch. Cột `NGÀY / GIỜ` là thời điểm của từng document. Bộ lọc `Nguồn còn lại` gom các dataset chưa nhận diện; tên dataset hoặc file cụ thể vẫn hiện trong cột Nguồn. JSON của log Coraza có trạng thái `portal.correlation.status`: `matched` khi tìm thấy log HAProxy cùng `http.request.id`, `not_found` khi có ID nhưng không có log khớp, hoặc `missing_request_id` khi log WAF thiếu ID. Khi khớp, `portal.correlation.haproxy` có IP client, method, path, HTTP status, route, backend và server; log Coraza vẫn giữ payload, rule và transaction. Hai log gốc vẫn là hai document riêng. Các request `/healthz` bị ẩn khỏi bảng nhật ký; health check không bị tắt.
 

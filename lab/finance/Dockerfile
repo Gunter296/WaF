@@ -10,6 +10,8 @@ ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
 ARG NEXT_VERSION=16.2.10
+ARG LAB_BUILD=vulnerable
+ENV LAB_BUILD=${LAB_BUILD}
 RUN npm run build
 USER node
 EXPOSE 3000

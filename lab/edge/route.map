@@ -1,0 +1,6 @@
+# HAProxy server name -> actual request path through the lab.
+# Both direct origin and failover origin bypass the WAF; backend/server keep
+# those two cases distinguishable in the same access event.
+finance bypass
+finance-fallback bypass
+waf waf

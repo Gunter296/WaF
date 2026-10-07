@@ -1,2 +1,8 @@
 
 coraza-caddy/logs
+/output/
+/reports/
+/strix_runs/
+/strix-mini.md
+/.agents/
+/skills-lock.json

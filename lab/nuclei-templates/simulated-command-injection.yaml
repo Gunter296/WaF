@@ -1,0 +1,24 @@
+id: waf-lab-simulated-command-injection
+
+info:
+  name: WAF Lab - simulated command injection marker
+  author: waf-lab
+  severity: info
+  description: Sends a harmless string to an isolated fixture that never invokes a shell or executes a command.
+  tags: cmdi,simulation,waf-lab
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}/api/lab/command"
+    headers:
+      Content-Type: application/json
+    body: '{"payload":"; echo LAB_CMDI_MARKER"}'
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200]
+      - type: word
+        part: body
+        words: ["LAB_CMDI_MARKER", "\"executed\":false"]
+        condition: and

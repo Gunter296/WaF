@@ -1,0 +1,28 @@
+id: waf-lab-incident-application-reject
+
+info:
+  name: WAF Lab - application rejection incident fixture
+  author: waf-lab
+  severity: info
+  description: Sends one login with a deliberately invalid lab-only identity; the application returns 401 after WAF inspection.
+  tags: incident,application,waf-lab
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}/api/lab/login"
+    headers:
+      Content-Type: application/json
+      User-Agent: WAF-Lab-Incident-Test/1.0
+    body: '{"email":"incident-denied@invalid.example","password":"not-a-real-password"}'
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [401]
+      - type: word
+        part: body
+        words: ['"lab":"SIMULATED_LOGIN"', '"success":false']
+        condition: and
+      - type: regex
+        part: header
+        regex: ["(?im)^X-Request-Id:"]

@@ -146,6 +146,12 @@ async function loadLogs({ quiet = false } = {}) {
         }
         const data = preview ? previewLogData() : await api(`/api/logs?${params}`);
         if (requestSeq !== logRequestSeq) return;
+        if (logPage > 1 && (!data.items.length || data.page > data.pages)) {
+            resetLogPaging();
+            notify('Trang nhật ký cũ không còn bản ghi; đang tải lại trang đầu.');
+            void loadLogs();
+            return;
+        }
         const signature = JSON.stringify({ items: data.items, total: data.total, page: data.page,
             page_size: data.page_size, pages: data.pages, next_after: data.next_after });
         changed = signature !== logsRenderSignature;
@@ -287,22 +293,69 @@ function render() {
     markDirty();
 }
 
+const syslogScale = [
+    ['0', 'Emergency', '#a83e48'], ['1', 'Alert', '#bd514a'],
+    ['2', 'Critical', '#d36a58'], ['3', 'Error', '#df8b58'],
+    ['4', 'Warning', '#e6b55c'], ['5', 'Notice', '#60c7cc'],
+    ['6', 'Informational', '#6fa9b4'], ['7', 'Debug', '#829096']
+];
+const syslogNameToCode = { emergency: 0, alert: 1, critical: 2, error: 3, warning: 4, notice: 5, informational: 6, info: 6, debug: 7 };
+
+function severityInfo(value, isOriginalSource = false) {
+    const raw = String(value ?? 'unknown').trim().toLowerCase();
+    const code = /^\d$/.test(raw) ? Number(raw) : isOriginalSource ? syslogNameToCode[raw] : undefined;
+    if (Number.isInteger(code) && code >= 0 && code <= 7) {
+        const [number, name, color] = syslogScale[code];
+        return { key: `syslog-${number}`, code, label: name, color, title: `${name} · Syslog severity ${number}` };
+    }
+    const legacy = {
+        critical: ['Cũ: “critical” · không lưu đủ mã gốc', '#d36a58', 'Worker cũ gộp mã 0–1 thành critical; nếu nguồn là chữ Critical thì tương ứng mã 2. Bản ghi cũ không còn đủ dữ liệu để phân biệt.'],
+        high: ['Cũ: “high” · có thể là Syslog 2–3', '#df8b58', 'Bản cũ gộp Syslog 2–3 thành high; mã gốc cần xem lại từ audit log.'],
+        medium: ['Nhãn mẫu cũ: medium', '#e6b55c', 'Nhãn mẫu trước đây, không phải mức Syslog.'],
+        low: ['Nhãn mẫu cũ: low', '#60c7cc', 'Nhãn mẫu trước đây, không phải mức Syslog.']
+    };
+    if (legacy[raw]) return { key: `legacy-${raw}`, label: legacy[raw][0], color: legacy[raw][1], title: legacy[raw][2] };
+    if (/^-\d+$/.test(raw)) return { key: 'invalid-negative', label: `Không thuộc Syslog (${raw})`, color: '#829096', title: 'Syslog severity hợp lệ là 0–7. Giá trị âm không phải severity CRS; cần xem lại nguồn dữ liệu.' };
+    return { key: 'unknown', label: 'Chưa xác định', color: '#829096', title: `Giá trị severity gốc: ${raw}` };
+}
+
+function candidateSeverityInfo(document) {
+    if (Number.isInteger(document.severity_syslog)) return severityInfo(document.severity_syslog);
+    if (document.severity_source !== undefined && document.severity_source !== null) return severityInfo(document.severity_source, true);
+    return severityInfo(document.severity);
+}
+
+function candidateSeverityBadge(document) {
+    const info = candidateSeverityInfo(document);
+    const tone = ['syslog-0', 'syslog-1', 'syslog-2', 'syslog-3', 'legacy-critical', 'legacy-high'].includes(info.key) ? 'red' : info.key === 'syslog-4' || info.key === 'legacy-medium' ? 'amber' : 'gray';
+    return `<span class="badge ${tone}" title="${esc(info.title)}">${esc(info.label)}</span>`;
+}
+
 function overview() {
     const pending = learning.filter(x => ['candidate', 'needs_review'].includes(x.status)).length;
     const active = policy.tuning_rules.filter(r => r.enabled !== false && new Date(r.expires_at) > new Date()).length;
     const counts = ['candidate', 'needs_review', 'confirmed_fp', 'dismissed'].map(s => learning.filter(x => x.status === s).length);
     const max = Math.max(...counts, 1);
     const labels = ['Ứng viên mới', 'Cần đánh giá', 'Đã xác nhận FP', 'Đã bỏ qua'];
-    const severity = ['critical', 'high', 'medium', 'low'];
-    const colors = ['#e99389', '#e6b55c', '#60c7cc', getComputedStyle(document.documentElement).getPropertyValue('--mint').trim() || '#00F5FF'];
-    const totals = severity.map(s => learning.filter(x => x.document.severity === s).length);
-    const total = totals.reduce((a, b) => a + b, 0);
-    let cursor = 0;
-    const gradient = totals.map((n, i) => {
-        const start = cursor;
-        cursor += n / (total || 1) * 100;
-        return `${colors[i]} ${start}% ${cursor}%`;
-    }).join(',');
+    const severityCounts = Array(8).fill(0);
+    let unknownSeverityCount = 0;
+    for (const row of learning) {
+        const code = candidateSeverityInfo(row.document).code;
+        if (Number.isInteger(code)) severityCounts[code]++;
+        else unknownSeverityCount++;
+    }
+    const maxSeverityCount = Math.max(...severityCounts, unknownSeverityCount, 1);
+    const severityChart = learning.length ? `<div class="severity-overview">
+        <div class="severity-total"><strong>${fmt(learning.length)}</strong><span>bản ghi learning đã tải · mọi trạng thái</span></div>
+        <div class="severity-chart" role="list" aria-label="Số bản ghi theo từng mức Syslog">
+            ${syslogScale.map(([code, name, color]) => {
+                const count = severityCounts[Number(code)];
+                return `<div class="severity-row" role="listitem" style="--severity-color:${color}"><span class="severity-name"><i class="severity-code">${code}</i>${name}</span><div class="severity-track" aria-hidden="true"><span class="severity-fill" style="width:${count / maxSeverityCount * 100}%"></span></div><strong>${fmt(count)} <small>${Math.round(count / learning.length * 100)}%</small></strong></div>`;
+            }).join('')}
+            ${unknownSeverityCount ? `<div class="severity-row" role="listitem" style="--severity-color:#829096"><span class="severity-name"><i class="severity-code">?</i>Không có mã Syslog</span><div class="severity-track" aria-hidden="true"><span class="severity-fill" style="width:${unknownSeverityCount / maxSeverityCount * 100}%"></span></div><strong>${fmt(unknownSeverityCount)} <small>${Math.round(unknownSeverityCount / learning.length * 100)}%</small></strong></div>` : ''}
+        </div>
+        <p class="severity-note">Mỗi dòng là một mức Syslog riêng; cột dài nhất ứng với mức có nhiều bản ghi nhất. Severity của rule CRS chỉ dùng tính điểm anomaly.</p>
+    </div>` : '<div class="chart-empty">Chưa có bản ghi learning để phân bố mức độ.</div>';
     return `<div class="metrics">${[
     ['Chế độ thực thi',policy.mode==='On'?'Blocking':'Detection','Coraza & chính sách hành vi','◇'],
     ['Cần đánh giá',fmt(pending),'Ứng viên learning đang chờ','↗'],
@@ -311,7 +364,7 @@ function overview() {
   ].map(([l,v,n,i])=>`<section class="metric"><div class="metric-label">${l}<span>${i}</span></div><div class="metric-value">${v}</div><div class="metric-note">${n}</div></section>`).join('')}</div>
   <div class="flow-strip"><span class="dot"></span><strong>Finance protection</strong><span>HAProxy</span><span>→</span><span>Coraza / CRS</span><span>→</span><span>Finance</span><span class="spacer"></span><span class="tag">CẤU HÌNH LAB</span><a href="http://127.0.0.1:5601" target="_blank" rel="noopener" aria-label="Mở Kibana để xem log WAF" title="Mở Kibana để xem log WAF">Mở Kibana ↗</a></div>
   <div class="two-col">${panel('Trạng thái phân tích',learning.length?`<div class="bar-chart">${counts.map((n,i)=>`<div class="bar-row"><span>${labels[i]}</span><div class="bar-track"><div class="bar-fill" style="width:${n/max*100}%"></div></div><span>${fmt(n)}</span></div>`).join('')}</div><div class="chart-caption"><span>Đơn vị: ứng viên learning</span><span>${learning.length} ứng viên đã tải</span></div>`:'<div class="chart-empty">Chưa có ứng viên learning để tổng hợp.</div>','<small>Snapshot hiện tại</small>')}
-  ${panel('Mức độ của ứng viên',total?`<div class="donut-layout"><div class="donut" style="background:conic-gradient(${gradient})"><div class="donut-inner"><strong>${total}</strong><small>ỨNG VIÊN</small></div></div><div class="legend">${severity.map((s,i)=>`<div><i style="background:${colors[i]}"></i>${s}<strong>${totals[i]}</strong></div>`).join('')}</div></div>`:'<div class="chart-empty">Chưa có dữ liệu mức độ.</div>','<small>Learning worker</small>')}</div>
+  ${panel('Phân bố mức độ',severityChart,'<small>Syslog 0–7 · bản ghi đã tải</small>')}</div>
   <section class="panel"><div class="panel-head"><h2 class="queue-title"><i></i>Hàng đợi cần chú ý</h2><a href="#findings">Xem tất cả ↗</a></div>${learningTable(learning.slice(0,5),false)}<div class="table-footer"><span>Nguồn: /api/learning · Tối đa 200 ứng viên gần nhất</span><span>Không phải tổng số request</span></div></section>`;
 }
 
@@ -320,19 +373,7 @@ function policyView() {
 }
 
 function botsView() {
-    return `<div class="hint">Bot detection dùng User-Agent tự khai báo và hành vi. Rate limit chung vẫn áp dụng với client giả User-Agent trình duyệt. Chọn “Chặn” và WAF On để thực thi.</div><div class="equal-col">${panel('Nhận diện bot & chống spam',toggle('bot_detection.enabled','Bật bot detection')+grid(field('bot_detection.spam_requests','Sức chứa token bucket','number',{max:10000})+field('bot_detection.spam_window_seconds','Thời gian nạp đầy bucket (giây)','number',{max:3600})+field('bot_detection.unique_paths','Số đường dẫn khác nhau','number',{min:3,max:100})+field('bot_detection.window_seconds','Cửa sổ quét đường dẫn (giây)','number',{max:3600})+action('bot_detection.action'))+'<p class="subtle">Ví dụ 10 token / 10 giây: burst tối đa 10, nạp lại 1 token/giây. Bộ đếm nằm trong tiến trình WAF.</p>')}${panel('Giới hạn request theo IP / CIDR',toggle('rate_limit.enabled','Bật rate limit chung')+grid(field('rate_limit.requests','Request / IP')+field('rate_limit.window_seconds','Cửa sổ / IP (giây)')+field('rate_limit.range_requests','Request / CIDR')+field('rate_limit.range_window_seconds','Cửa sổ / CIDR (giây)')+choice('rate_limit.prefix_v4','Prefix IP v4',[32,24,16,8])+choice('rate_limit.prefix_v6','Prefix IP v6',[128,64,48])+choice('rate_limit.range_prefix_v4','Prefix CIDR v4',[24,16,8])+choice('rate_limit.range_prefix_v6','Prefix CIDR v6',[64,48])))}</div>${Object.entries({login_failures:'Đăng nhập thất bại',not_found_burst:'Quét URL · Burst 404',sequential_documents:'Truy cập chứng từ tuần tự'}).map(([k,l])=>panel(l,toggle(`
-    behavior.$ {
-        k
-    }.enabled`,'Bật xử lý hành vi')+grid(field(`
-    behavior.$ {
-        k
-    }.limit`,'Số lần ghi nhận','number',{max:10000})+field(`
-    behavior.$ {
-        k
-    }.window_seconds`,'Cửa sổ (giây)','number',{max:3600})+action(`
-    behavior.$ {
-        k
-    }.action`)))).join('')}`;
+    return `<div class="hint">Bot detection dùng User-Agent tự khai báo và hành vi. Rate limit chung vẫn áp dụng với client giả User-Agent trình duyệt. Chọn “Chặn” và WAF On để thực thi.</div><div class="equal-col">${panel('Nhận diện bot & chống spam',toggle('bot_detection.enabled','Bật bot detection')+grid(field('bot_detection.spam_requests','Sức chứa token bucket','number',{max:10000})+field('bot_detection.spam_window_seconds','Thời gian nạp đầy bucket (giây)','number',{max:3600})+field('bot_detection.unique_paths','Số đường dẫn khác nhau','number',{min:3,max:100})+field('bot_detection.window_seconds','Cửa sổ quét đường dẫn (giây)','number',{max:3600})+action('bot_detection.action'))+'<p class="subtle">Ví dụ 10 token / 10 giây: burst tối đa 10, nạp lại 1 token/giây. Bộ đếm nằm trong tiến trình WAF.</p>')}${panel('Giới hạn request theo IP / CIDR',toggle('rate_limit.enabled','Bật rate limit chung')+grid(field('rate_limit.requests','Request / IP')+field('rate_limit.window_seconds','Cửa sổ / IP (giây)')+field('rate_limit.range_requests','Request / CIDR')+field('rate_limit.range_window_seconds','Cửa sổ / CIDR (giây)')+choice('rate_limit.prefix_v4','Prefix IP v4',[32,24,16,8])+choice('rate_limit.prefix_v6','Prefix IP v6',[128,64,48])+choice('rate_limit.range_prefix_v4','Prefix CIDR v4',[24,16,8])+choice('rate_limit.range_prefix_v6','Prefix CIDR v6',[64,48])))}</div>${Object.entries({login_failures:'Đăng nhập thất bại',not_found_burst:'Quét URL · Burst 404',sequential_documents:'Truy cập chứng từ tuần tự'}).map(([k,l])=>panel(l,toggle(`behavior.${k}.enabled`,'Bật xử lý hành vi')+grid(field(`behavior.${k}.limit`,'Số lần ghi nhận','number',{max:10000})+field(`behavior.${k}.window_seconds`,'Cửa sổ (giây)','number',{max:3600})+action(`behavior.${k}.action`)))).join('')}`;
 }
 
 function accessView() {
@@ -349,7 +390,7 @@ function automationView() {
 
 function learningTable(rows, actions = true) {
     if (!rows.length) return '<div class="empty">Không có ứng viên phù hợp.<br>Dữ liệu xuất hiện khi learning worker thu thập được sự kiện.</div>';
-    return `<div class="table-wrap"><table><thead><tr><th>RULE / ENDPOINT</th><th>LOẠI</th><th>REQUEST ĐÃ GOM</th><th>MỨC ĐỘ</th><th>TRẠNG THÁI</th><th>${actions?'THAO TÁC':'PL'}</th></tr></thead><tbody>${rows.map(r=>{const d=r.document;return `<tr><td><span class="route-title">CRS ${esc(d.rule_id)} · ${esc(d.method)}</span><span class="mono">${esc(d.path)}</span></td><td>${badge(d.parameter||'Rule match','purple')}</td><td>${fmt(d.count)} <span class="subtle">/ ${fmt(d.days)} ngày</span></td><td>${badge(d.severity,['critical','high'].includes(d.severity)?'red':d.severity==='medium'?'amber':'gray')}</td><td>${badge(r.status,r.status==='confirmed_fp'?'':'gray')}</td><td>${actions?`<button class="small" data-action="review" data-key="${esc(r.key)}">Đánh giá ↗</button>`:esc('PL '+d.pl)}</td></tr>`;}).join('')}</tbody></table></div>`;
+    return `<div class="table-wrap"><table><thead><tr><th>RULE / ENDPOINT</th><th>LOẠI</th><th>REQUEST ĐÃ GOM</th><th>MỨC ĐỘ</th><th>TRẠNG THÁI</th><th>${actions?'THAO TÁC':'PL'}</th></tr></thead><tbody>${rows.map(r=>{const d=r.document;return `<tr><td><span class="route-title">CRS ${esc(d.rule_id)} · ${esc(d.method)}</span><span class="mono">${esc(d.path)}</span></td><td>${badge(d.parameter||'Rule match','purple')}</td><td>${fmt(d.count)} <span class="subtle">/ ${fmt(d.days)} ngày</span></td><td>${candidateSeverityBadge(d)}</td><td>${badge(r.status,r.status==='confirmed_fp'?'':'gray')}</td><td>${actions?`<button class="small" data-action="review" data-key="${esc(r.key)}">Đánh giá ↗</button>`:esc('PL '+d.pl)}</td></tr>`;}).join('')}</tbody></table></div>`;
 }
 
 function findings() {
@@ -364,13 +405,22 @@ function logRows() {
     if (logsError) return `<section class="panel empty">Không tải được nhật ký: ${esc(logsError)}</section>`;
     if (!logs.length) return '<section class="panel empty">Không có sự kiện phù hợp trong khoảng ngày đã chọn. Thử mở rộng thời gian hoặc tạo request mới.</section>';
     const requests = new Map();
-    const system = [];
+    const entries = [];
+    let systemCount = 0;
     for (const row of logs) {
         const headers = row.transaction?.request?.headers || {};
         const headerId = Object.entries(headers).find(([key]) => key.toLowerCase() === 'x-request-id')?.[1];
         const id = row.http?.request?.id || row.request?.headers?.['X-Request-Id']?.[0] || (Array.isArray(headerId) ? headerId[0] : headerId) || row.portal?.correlation?.haproxy?.request_id || '';
-        if (!id || id === '-') { system.push(row); continue; }
-        if (!requests.has(id)) requests.set(id, []);
+        if (!id || id === '-') {
+            entries.push({ row });
+            systemCount++;
+            continue;
+        }
+        if (!requests.has(id)) {
+            const rows = [];
+            requests.set(id, rows);
+            entries.push({ id, rows });
+        }
         requests.get(id).push(row);
     }
     const sourceName = row => row.portal?.source_label || row.event?.dataset || 'Nguồn khác';
@@ -381,7 +431,14 @@ function logRows() {
         const result = info.explanation || row.messages?.[0]?.message || row.transaction?.messages?.[0]?.message || row.event?.action || row.message || 'Đã ghi nhận request';
         return `<div class="request-evidence"><div><strong>${esc(label)}</strong><span class="subtle"> · ${esc(date(row['@timestamp']))}</span></div><p>${esc(result)}</p>${rules ? `<span class="request-rule">${esc(rules)}</span>` : ''}<details class="json-details" data-log-key="${esc(`${row['@timestamp']}:${label}`)}"><summary>Xem JSON nguồn này</summary><pre>${esc(JSON.stringify(row, null, 2))}</pre></details></div>`;
     };
-    const body = [...requests].map(([id, rows]) => {
+    const body = entries.map((entry, index) => {
+        if (entry.row) {
+            const row = entry.row;
+            const source = sourceName(row);
+            const status = row.portal?.status;
+            return `<tr class="system-summary"><td>${esc(date(row['@timestamp']))}</td><td>${esc(row.portal?.ip || '—')}</td><td><strong class="request-path">${esc(row.event?.action || source)}</strong><span class="mono request-id">Không có X-Request-ID</span></td><td>Sự kiện hệ thống</td><td>${status == null ? 'Đã ghi nhận' : esc(status)}</td><td><div class="request-source-list"><span>${esc(source)}</span></div></td><td><details class="request-details" data-log-key="${esc(`system:${row['@timestamp']}:${index}`)}"><summary>Xem sự kiện</summary><div class="request-detail-content">${evidence(row)}</div></details></td></tr>`;
+        }
+        const { id, rows } = entry;
         const primary = rows.find(row => row.portal?.category) || rows[0];
         const proxy = rows.find(row => row.portal?.source_group === 'haproxy');
         const context = rows.find(row => row.portal?.correlation?.haproxy)?.portal.correlation.haproxy;
@@ -396,15 +453,14 @@ function logRows() {
         if (context && !sourceLabels.some(label => label.toLowerCase().includes('haproxy'))) sourceLabels.unshift('HAProxy · ngữ cảnh');
         return `<tr class="request-summary"><td>${esc(date(primary['@timestamp']))}</td><td><strong>${esc(ip || 'Chưa rõ IP')}</strong></td><td><strong class="request-path">${esc(`${method} ${path}`.trim() || 'Chưa rõ đường dẫn')}</strong><span class="mono request-id">${esc(id)}</span>${route ? `<span class="subtle">Tuyến: ${esc(route)}</span>` : ''}</td><td>${esc(info.category || 'Chưa phân loại')}${info.rules?.length ? `<span class="request-rule">Rule ${esc(info.rules.join(', '))}</span>` : ''}</td><td>${blocked ? `<span class="request-result blocked">Đã chặn · ${esc(status ?? 403)}</span>` : status === 403 ? '<span class="request-result rejected">403 · Từ chối</span>' : `<span class="request-result allowed">${esc(status ?? '—')}</span>`}</td><td><div class="request-source-list">${sourceLabels.map(label => `<span>${esc(label)}</span>`).join('')}</div></td><td><details class="request-details" data-log-key="${esc(id)}"><summary>Xem diễn biến</summary><div class="request-detail-content">${context && !rows.some(row => row.portal?.source_group === 'haproxy') ? `<div class="request-evidence"><strong>HAProxy · ngữ cảnh</strong><p>IP ${esc(context.client_ip || '—')} · tuyến ${esc(context.route || '—')} · backend ${esc(context.backend || '—')} · HTTP ${esc(context.status ?? '—')}</p><span class="subtle">Bản ghi HAProxy liên kết; JSON gốc chưa tải trong trang này.</span></div>` : ''}${rows.map(evidence).join('')}<div class="request-evidence subtle">${rows.some(row => row.portal?.source_group === 'finance') ? 'Có log ứng dụng.' : blocked ? 'Không có log ứng dụng trong dữ liệu đã tải; request có thể đã bị chặn trước ứng dụng.' : 'Chưa thấy log ứng dụng trong dữ liệu đã tải.'}</div></div></details></td></tr>`;
     }).join('');
-    const systemRows = system.map(row => `<div class="system-event"><span>${esc(date(row['@timestamp']))}</span><strong>${esc(sourceName(row))}</strong><span>${esc(row.portal?.explanation || row.message || row.event?.action || 'Sự kiện không gắn request ID')}</span><details class="json-details" data-log-key="${esc(`system:${row['@timestamp']}`)}"><summary>Xem JSON</summary><pre>${esc(JSON.stringify(row, null, 2))}</pre></details></div>`).join('');
-    return `<section class="panel logs-panel"><div class="panel-head"><h2>Request <span class="subtle">/ ${requests.size} trong trang này</span></h2><small>${fmt(logsMeta.total)} bản ghi nguồn · trang ${logsMeta.page}/${logsMeta.pages}</small></div><div class="logs-table-frame"><div class="table-wrap logs-table-wrap" tabindex="0" role="region" aria-label="Bảng request cuộn ngang"><table class="logs-table request-table"><thead><tr><th>THỜI GIAN</th><th>IP CLIENT</th><th>REQUEST</th><th>PHÂN LOẠI</th><th>KẾT QUẢ</th><th>NGUỒN ĐÃ THẤY</th><th>CHI TIẾT</th></tr></thead><tbody>${body || '<tr><td colspan="7">Không có request trong trang bản ghi này.</td></tr>'}</tbody></table></div></div><div class="table-footer"><span>Gom các bản ghi có cùng X-Request-ID trong trang hiện tại</span><div class="action-row"><button data-action="log-prev" ${logsMeta.page <= 1 ? 'disabled' : ''}>← Trước</button><button data-action="log-next" ${!logsMeta.next_after ? 'disabled' : ''}>Sau →</button></div></div></section>${system.length ? `<section class="panel system-events"><div class="panel-head"><h2>Sự kiện hệ thống <span class="subtle">/ ${system.length}</span></h2><small>Không có X-Request-ID để ghép vào request</small></div><div class="system-event-list">${systemRows}</div></section>` : ''}`;
+    return `<section class="panel logs-panel"><div class="panel-head"><h2>Nhật ký <span class="subtle">/ ${requests.size} request · ${systemCount} sự kiện hệ thống</span></h2><small>${fmt(logsMeta.total)} bản ghi nguồn · trang ${logsMeta.page}/${logsMeta.pages}</small></div><div class="logs-table-frame"><div class="table-wrap logs-table-wrap" tabindex="0" role="region" aria-label="Bảng nhật ký cuộn ngang"><table class="logs-table request-table"><thead><tr><th>THỜI GIAN</th><th>IP CLIENT</th><th>REQUEST / SỰ KIỆN</th><th>PHÂN LOẠI</th><th>KẾT QUẢ</th><th>NGUỒN ĐÃ THẤY</th><th>CHI TIẾT</th></tr></thead><tbody>${body}</tbody></table></div></div><div class="table-footer"><span>Request cùng X-Request-ID được gom trong trang; sự kiện hệ thống hiển thị theo thời gian</span><div class="action-row"><button data-action="log-prev" ${logsMeta.page <= 1 ? 'disabled' : ''}>← Trước</button><button data-action="log-next" ${!logsMeta.next_after ? 'disabled' : ''}>Sau →</button></div></div></section>`;
 }
 
 function logsView() {
     const sources = [['all','Tất cả nguồn'],['haproxy','HAProxy'],['waf','WAF / Coraza'],['finance','Finance'],['portal','Portal'],['other','Khác / chưa phân loại']];
     const categories = [['all','Mọi loại'],['sqli','SQL injection'],['xss','XSS'],['rce','RCE'],['lfi','LFI'],['ssrf','SSRF'],['cve','CVE']];
     const statuses = [['all','Mọi HTTP'],['2xx','2xx'],['3xx','3xx'],['4xx','4xx'],['5xx','5xx'],['403','403']];
-    return `<div class="toolbar logs-toolbar"><input id="log-search" type="search" aria-label="Tìm trong nhật ký" placeholder="Tìm request ID, IP, rule, đường dẫn…" value="${esc(logQuery)}"><label>Từ ngày <input id="log-from" type="date" value="${esc(logFrom)}"></label><label>Đến ngày <input id="log-to" type="date" value="${esc(logTo)}"></label></div><div class="logs-column-filters" aria-label="Lọc theo cột"><label>Nguồn<select id="log-dataset" aria-label="Lọc nguồn nhật ký">${sources.map(([value,label]) => `<option value="${value}" ${logDataset===value?'selected':''}>${label}</option>`).join('')}</select></label><label>Sự kiện<input id="log-event" type="search" placeholder="Tên sự kiện" value="${esc(logEvent)}"></label><label>Payload / CVE<select id="log-category">${categories.map(([value,label]) => `<option value="${value}" ${logCategory===value?'selected':''}>${label}</option>`).join('')}</select></label><label>Đường dẫn<input id="log-path" type="search" placeholder="/api/..." value="${esc(logPath)}"></label><label>IP<input id="log-ip" type="search" placeholder="IP chính xác" value="${esc(logIp)}"></label><label>HTTP<select id="log-status">${statuses.map(([value,label]) => `<option value="${value}" ${logStatus===value?'selected':''}>${label}</option>`).join('')}</select></label></div><p class="subtle logs-help">Các bản ghi cùng X-Request-ID được gom trong trang hiện tại. Mở “Xem diễn biến” để đối chiếu từng nguồn. Sự kiện không có request ID nằm riêng bên dưới; /healthz không hiển thị.</p><div id="logs-results">${logRows()}</div>`;
+    return `<div class="toolbar logs-toolbar"><input id="log-search" type="search" aria-label="Tìm trong nhật ký" placeholder="Tìm request ID, IP, rule, đường dẫn…" value="${esc(logQuery)}"><label>Từ ngày <input id="log-from" type="date" value="${esc(logFrom)}"></label><label>Đến ngày <input id="log-to" type="date" value="${esc(logTo)}"></label></div><div class="logs-column-filters" aria-label="Lọc theo cột"><label>Nguồn<select id="log-dataset" aria-label="Lọc nguồn nhật ký">${sources.map(([value,label]) => `<option value="${value}" ${logDataset===value?'selected':''}>${label}</option>`).join('')}</select></label><label>Sự kiện<input id="log-event" type="search" placeholder="Tên sự kiện" value="${esc(logEvent)}"></label><label>Payload / CVE<select id="log-category">${categories.map(([value,label]) => `<option value="${value}" ${logCategory===value?'selected':''}>${label}</option>`).join('')}</select></label><label>Đường dẫn<input id="log-path" type="search" placeholder="/api/..." value="${esc(logPath)}"></label><label>IP<input id="log-ip" type="search" placeholder="IP chính xác" value="${esc(logIp)}"></label><label>HTTP<select id="log-status">${statuses.map(([value,label]) => `<option value="${value}" ${logStatus===value?'selected':''}>${label}</option>`).join('')}</select></label></div><p class="subtle logs-help">Các bản ghi cùng X-Request-ID được gom trong trang hiện tại. Mở “Xem diễn biến” để đối chiếu từng nguồn. Sự kiện không có request ID hiển thị trong cùng bảng; /healthz không hiển thị.</p><div id="logs-results">${logRows()}</div>`;
 }
 
 function dialog(title, html, onSubmit) {

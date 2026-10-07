@@ -73,10 +73,18 @@ async function writeIPPolicy(content) {
 }
 
 async function reloadCaddy() {
-  const config = await readFile(caddyFile);
+  let config = await readFile(caddyFile, "utf8");
+  for (const [include, file] of [
+    ["Include /etc/coraza-tuning/ip-policy.conf", ipPolicyFile],
+    ["Include /etc/coraza-tuning/tuning.conf", tuningFile]
+  ]) {
+    if (!config.includes(include)) throw new Error(`Caddyfile is missing expected Coraza include: ${include}`);
+    const directives = (await readFile(file, "utf8")).trimEnd();
+    config = config.replace(include, directives);
+  }
   const response = await fetch(`${caddyAdmin}/load`, {
     method: "POST",
-    headers: { "content-type": "text/caddyfile", "cache-control": "must-revalidate" },
+    headers: { "content-type": "text/caddyfile", "cache-control": "must-revalidate", origin: new URL(caddyAdmin).origin },
     body: config,
     signal: AbortSignal.timeout(15000)
   });
@@ -222,7 +230,7 @@ async function learningRows() {
 }
 
 async function hasOpenSevere(policy) {
-  const { rows } = await pool.query("SELECT document FROM lab_learning WHERE status IN ('needs_review','confirmed_fp') AND document->>'severity' IN ('high','critical')");
+  const { rows } = await pool.query("SELECT document FROM lab_learning WHERE status IN ('needs_review','confirmed_fp') AND (document->>'severity_syslog' IN ('0','1','2','3') OR document->>'severity' IN ('high','critical'))");
   return rows.some(({ document: item }) => !(policy.tuning_rules || []).some((rule) =>
     rule.enabled !== false && new Date(rule.expires_at) > new Date() && rule.rule_id === item.rule_id && rule.site === item.site && rule.path === item.path && rule.method === item.method &&
     (rule.scope === "rule" || rule.target === item.parameter)));
@@ -239,7 +247,9 @@ async function upsertLearning(items) {
       const document = {
         site: String(item.site || "finance-vulnerable"), rule_id: Number(item.rule_id), pl: Number(item.pl), method: String(item.method || ""), path: String(item.path || ""),
         parameter: String(item.parameter || ""), count: Number(item.count || 0), days: Number(item.days || 0),
-        first_seen: item.first_seen, last_seen: item.last_seen, severity: String(item.severity || "unknown"),
+        first_seen: item.first_seen, last_seen: item.last_seen, severity: String(item.severity ?? "unknown"),
+        severity_syslog: Number.isInteger(item.severity_syslog) && item.severity_syslog >= 0 && item.severity_syslog <= 7 ? item.severity_syslog : null,
+        severity_source: String(item.severity_source ?? item.severity ?? "unknown"),
         other_serious: item.other_serious === true, estimated_blocks: Number(item.estimated_blocks || 0),
         sample_request_ids: Array.isArray(item.sample_request_ids) ? item.sample_request_ids.slice(0, 5).map(String) : []
       };

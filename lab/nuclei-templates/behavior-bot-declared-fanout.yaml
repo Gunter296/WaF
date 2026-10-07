@@ -4,7 +4,7 @@ info:
   name: WAF Lab - declared bot with path fanout
   author: waf-lab
   severity: info
-  description: Checks the combined User-Agent and distinct-path policy on the local lab WAF.
+  description: Checks the combined self-declared User-Agent and distinct-path policy; response header distinguishes observe from block.
   tags: behavior,bot,waf-lab
 
 http:
@@ -24,8 +24,11 @@ http:
     matchers-condition: and
     matchers:
       - type: status
-        status: [403]
+        status: [200, 403, 404]
       - type: word
         part: header
         words: ["X-WAF-Lab-Rule: bot_declared_fanout"]
         case-insensitive: true
+      - type: regex
+        part: header
+        regex: ["(?im)^X-WAF-Lab-Decision:\\s*(observe|block)\\s*$"]

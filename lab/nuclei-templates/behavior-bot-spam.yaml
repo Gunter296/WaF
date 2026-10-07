@@ -4,7 +4,7 @@ info:
   name: WAF Lab - bot request rate enforcement
   author: waf-lab
   severity: info
-  description: Repeats one endpoint with a declared bot User-Agent to verify WAF-side request throttling.
+  description: Repeats one endpoint with a self-declared bot User-Agent; response header distinguishes observe from block.
   tags: behavior,bot,rate-limit,waf-lab
 
 http:
@@ -20,8 +20,11 @@ http:
     matchers-condition: and
     matchers:
       - type: status
-        status: [429]
+        status: [200, 429]
       - type: word
         part: header
         words: ["X-WAF-Lab-Rule: bot_request_rate"]
         case-insensitive: true
+      - type: regex
+        part: header
+        regex: ["(?im)^X-WAF-Lab-Decision:\\s*(observe|block)\\s*$"]

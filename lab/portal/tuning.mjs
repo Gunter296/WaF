@@ -41,10 +41,12 @@ export function renderTuning(rules, now = new Date()) {
       : `ctl:ruleRemoveById=${item.rule_id}`;
     const expires = Math.floor(new Date(item.expires_at).getTime() / 1000);
     const host = item.site === "finance-patched" ? "^patched\\.localhost(?::8080)?$" : "^(?:localhost|127\\.0\\.0\\.1)(?::8080)?$";
-    lines.push(`SecRule REQUEST_FILENAME "@streq ${item.path}" "id:${110000 + index},phase:1,pass,nolog,t:none,chain,${action}"`);
+    lines.push(`SecRule REQUEST_FILENAME "@streq ${item.path}" "id:${110000 + index},phase:1,pass,nolog,t:none,chain"`);
     lines.push(`SecRule REQUEST_METHOD "@streq ${item.method}" "t:none,chain"`);
     lines.push(`SecRule REQUEST_HEADERS:Host "@rx ${host}" "t:none,t:lowercase,chain"`);
-    lines.push(`SecRule TIME_EPOCH "@lt ${expires}" "t:none"`);
+    // ctl is non-disruptive and runs as soon as its own rule matches. Keep it
+    // on the final chain member so path/method/host/expiry all gate the action.
+    lines.push(`SecRule TIME_EPOCH "@lt ${expires}" "t:none,${action}"`);
     index++;
   }
   return `${lines.join("\n")}\n`;

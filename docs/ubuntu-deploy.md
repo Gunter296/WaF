@@ -66,7 +66,7 @@ curl -i -o /dev/null -w 'portal HTTP %{http_code}\n' http://127.0.0.1:8090/
 curl -fsS http://127.0.0.1:9200/_cluster/health
 ```
 
-Website có tài khoản giả `an.demo@northstar.test` / `demo1234`. Host `direct.localhost` đi tới origin để lấy baseline; `patched.localhost` đi qua WAF tới bản Next.js đã vá. Có thể kiểm tra route bằng `curl -H 'Host: direct.localhost' http://127.0.0.1:8080/` và `curl -H 'Host: patched.localhost' http://127.0.0.1:8080/`. Khi WAF ngừng hoạt động, HAProxy chuyển tuyến `bypass` tới finance vulnerable; theo dõi tuyến này trong log HAProxy.
+Website có tài khoản giả `an.demo@northstar.test` / `demo1234`. Host `direct.localhost` đi tới origin để lấy baseline và được ghi `lab.route=bypass`, backend/server `finance_direct/finance`; `patched.localhost` đi qua WAF tới bản Next.js đã vá. Có thể kiểm tra route bằng `curl -H 'Host: direct.localhost' http://127.0.0.1:8080/` và `curl -H 'Host: patched.localhost' http://127.0.0.1:8080/`. Khi WAF ngừng hoạt động, HAProxy chuyển tuyến `bypass` tới finance vulnerable qua `finance_waf_with_fallback/finance-fallback`; theo dõi backend/server để phân biệt với baseline.
 
 ## 5. Quét Nuclei trong mạng lab
 

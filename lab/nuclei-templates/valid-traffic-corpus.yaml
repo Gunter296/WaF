@@ -1,0 +1,73 @@
+id: waf-lab-valid-traffic-corpus
+
+info:
+  name: WAF Lab - benign request corpus
+  author: waf-lab
+  severity: info
+  description: Small repeatable set of expected-valid lab requests for comparing bypass, DetectionOnly, and On.
+  tags: benign,regression,waf-lab
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/api/lab/search?q=C%C3%A0%20ph%C3%AA"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200]
+      - type: word
+        part: body
+        words: ["SIMULATED_SQLI", "Cà phê Sông Xanh"]
+        condition: and
+
+  - method: GET
+    path:
+      - "{{BaseURL}}/api/lab/search?q=O%27Reilly"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200]
+      - type: word
+        part: body
+        words: ["SIMULATED_SQLI"]
+
+  - method: GET
+    path:
+      - "{{BaseURL}}/api/lab/file?path=public%2Fstatement.txt"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200]
+      - type: word
+        part: body
+        words: ["LAB_DEMO_STATEMENT"]
+
+  - method: POST
+    path:
+      - "{{BaseURL}}/api/lab/upload"
+    headers:
+      Content-Type: application/json
+    body: '{"name":"statement.pdf"}'
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200]
+      - type: word
+        part: body
+        words: ["statement.pdf", '"accepted_by_demo":true']
+        condition: and
+
+  - method: POST
+    path:
+      - "{{BaseURL}}/api/lab/command"
+    headers:
+      Content-Type: application/json
+    body: '{"payload":"lookup customer LAB-1001"}'
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200]
+      - type: word
+        part: body
+        words: ["LAB_CMDI_VALID", "\"executed\":false"]
+        condition: and

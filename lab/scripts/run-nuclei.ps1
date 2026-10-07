@@ -29,7 +29,7 @@ if ($HostName -ne 'direct.localhost' -and $WafMode -eq 'N/A') {
 
 New-Item -ItemType Directory -Force -Path $resultsRoot, (Split-Path $rawDirectory) | Out-Null
 $appVersion = if ($HostName -eq 'patched.localhost') { 'Next.js 16.2.11' } else { 'Next.js 16.2.10' }
-$route = if ($HostName -eq 'direct.localhost') { 'origin-direct' } elseif ($HostName -eq 'patched.localhost') { 'waf-to-patched' } else { 'waf-or-failover-bypass; verify actual lab.route in HAProxy log' }
+$route = if ($HostName -eq 'direct.localhost') { 'bypass; expect backend finance_direct/server finance' } elseif ($HostName -eq 'patched.localhost') { 'waf; expect backend finance_patched_waf/server waf' } else { 'waf unless failover; verify lab.backend and lab.server' }
 $templateHashes = @{}
 foreach ($template in $Templates) {
   $templateHashes[$template] = (Get-FileHash (Join-Path $templateRoot $template) -Algorithm SHA256).Hash

@@ -1,0 +1,35 @@
+id: waf-lab-tuning-exception-scope
+
+info:
+  name: WAF Lab - exact tuning exception scope
+  author: waf-lab
+  severity: info
+  description: Compares an exact q parameter exception with a different parameter on the same route; fixture payload is simulated and safe.
+  tags: tuning,exception,scope,waf-lab
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/api/lab/search?q=%27%20OR%201%3D1--"
+      - "{{BaseURL}}/api/lab/search?q=coffee&other=%27%20OR%201%3D1--"
+      - "{{BaseURL}}/api/lab/search/extra?q=%27%20OR%201%3D1--"
+    stop-at-first-match: false
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200, 403]
+      - type: regex
+        part: header
+        regex: ["(?im)^X-Request-Id:"]
+
+  - method: POST
+    path:
+      - "{{BaseURL}}/api/lab/search?q=%27%20OR%201%3D1--"
+    stop-at-first-match: false
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200, 403]
+      - type: regex
+        part: header
+        regex: ["(?im)^X-Request-Id:"]

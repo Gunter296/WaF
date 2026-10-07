@@ -15,7 +15,7 @@ Tài liệu này ghi lại những điểm nên xem xét khi nâng cấp cấu h
 | Đề xuất | Trong `lab/` |
 | --- | --- |
 | Bind cổng ở loopback, tách Compose, bỏ service placeholder | Đã áp dụng trong `lab/docker-compose.yml`; các cổng publish dùng `127.0.0.1`. |
-| Health check, route finance và failover | Đã áp dụng trong `lab/edge/haproxy.cfg`; backup chuyển thẳng tới origin và ghi tuyến `bypass`. |
+| Health check, route finance và failover | Đã áp dụng trong `lab/edge/haproxy.cfg`; baseline direct và backup chuyển thẳng tới origin, đều ghi `bypass` nhưng phân biệt bằng backend/server. |
 | CRS, giới hạn body và log riêng | Đã cấu hình tại `lab/waf/Caddyfile` và `lab/waf/config/coraza.conf`; CRS được plugin Coraza-Caddy đóng gói trong image lab. |
 | Ghim phiên bản image và cô lập mạng lúc chạy | Compose lab dùng tag cụ thể, các mạng đánh dấu `internal: true`. `finance/Dockerfile` chọn phiên bản Next.js bằng build arg, nhưng chạy `npm install --no-package-lock`: bản transitive dependency chưa được khóa bằng lockfile. |
 | Nâng cấp cấu hình gốc | Chưa áp dụng; các file gốc giữ nguyên. |

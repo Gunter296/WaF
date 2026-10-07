@@ -107,18 +107,18 @@ demoPolicy.tuning_rules = [{
     }
 ];
 const fixtures = [
-    [942100, 'GET', '/api/lab/search', 'ARGS:q', 128, 'high', 'candidate'],
-    [941100, 'POST', '/api/lab/transfer', 'ARGS:note', 64, 'high', 'needs_review'],
-    [930100, 'GET', '/api/lab/file', 'ARGS:path', 47, 'critical', 'candidate'],
-    [920350, 'GET', '/api/lab/documents/102', 'REQUEST_HEADERS:Host', 32, 'medium', 'candidate'],
-    [942430, 'GET', '/api/lab/search', 'ARGS:q', 24, 'medium', 'confirmed_fp'],
-    [920300, 'POST', '/api/lab/login', 'REQUEST_HEADERS:Accept', 19, 'low', 'dismissed'],
-    [941160, 'GET', '/api/lab/xss', 'ARGS:content', 17, 'high', 'candidate'],
-    [920420, 'POST', '/api/lab/upload', 'REQUEST_HEADERS:Content-Type', 15, 'medium', 'needs_review'],
-    [942200, 'GET', '/api/lab/search', 'ARGS:q', 12, 'high', 'candidate'],
-    [920320, 'GET', '/api/lab/documents/101', 'REQUEST_HEADERS:User-Agent', 9, 'low', 'dismissed'],
-    [942260, 'POST', '/api/lab/transfer', 'ARGS:note', 8, 'medium', 'candidate'],
-    [941180, 'GET', '/api/lab/xss', 'ARGS:content', 6, 'medium', 'confirmed_fp']
+    [942100, 'GET', '/api/lab/search', 'ARGS:q', 128, '2', 'candidate'],
+    [941100, 'POST', '/api/lab/transfer', 'ARGS:note', 64, '2', 'needs_review'],
+    [930100, 'GET', '/api/lab/file', 'ARGS:path', 47, '2', 'candidate'],
+    [920350, 'GET', '/api/lab/documents/102', 'REQUEST_HEADERS:Host', 32, '4', 'candidate'],
+    [942430, 'GET', '/api/lab/search', 'ARGS:q', 24, '2', 'confirmed_fp'],
+    [920300, 'POST', '/api/lab/login', 'REQUEST_HEADERS:Accept', 19, '5', 'dismissed'],
+    [941160, 'GET', '/api/lab/xss', 'ARGS:content', 17, '2', 'candidate'],
+    [920420, 'POST', '/api/lab/upload', 'REQUEST_HEADERS:Content-Type', 15, '2', 'needs_review'],
+    [942200, 'GET', '/api/lab/search', 'ARGS:q', 12, '2', 'candidate'],
+    [920320, 'GET', '/api/lab/documents/101', 'REQUEST_HEADERS:User-Agent', 9, '5', 'dismissed'],
+    [942260, 'POST', '/api/lab/transfer', 'ARGS:note', 8, '2', 'candidate'],
+    [941180, 'GET', '/api/lab/xss', 'ARGS:content', 6, '2', 'confirmed_fp']
 ];
 export const demoLearning = fixtures.map(([rule_id, method, path, parameter, count, severity, status], i) => ({
     key: `demo-${i}`,
@@ -133,6 +133,8 @@ export const demoLearning = fixtures.map(([rule_id, method, path, parameter, cou
         parameter,
         count,
         severity,
+        severity_syslog: Number(severity),
+        severity_source: severity,
         days: 3,
         pl: i % 3 + 1,
         estimated_blocks: Math.round(count * .65),

@@ -17,7 +17,10 @@ async function esSearch(query) { return jsonRequest(`${es}/waf-lab-*/_search?ign
 async function tick() {
   const policy = (await jsonRequest(`${portal}/api/policy`)).document;
   const audit = await esSearch({ size: 5000, track_total_hits: true, sort: [{ "@timestamp": { order: "desc" } }],
-    query: { bool: { filter: [{ range: { "@timestamp": { gte: "now-4d" } } }, { exists: { field: "messages.details.ruleId" } }] } } });
+    query: { bool: { filter: [{ range: { "@timestamp": { gte: "now-4d" } } }, { bool: { should: [
+      { exists: { field: "messages.data.id" } }, { exists: { field: "messages.details.ruleId" } },
+      { exists: { field: "transaction.messages.data.id" } }, { exists: { field: "transaction.messages.details.ruleId" } }
+    ], minimum_should_match: 1 } }] } } });
   const hits = audit.hits?.hits || [];
   const candidates = extractCandidates(hits.map((hit) => hit._source), Number(policy.blocking_pl || 1));
   const truncated = Number(audit.hits?.total?.value || 0) > hits.length || candidates.length > 100;

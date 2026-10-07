@@ -40,11 +40,16 @@ export function renderTuning(rules, now = new Date()) {
       ? `ctl:ruleRemoveTargetById=${item.rule_id};${item.target}`
       : `ctl:ruleRemoveById=${item.rule_id}`;
     const expires = Math.floor(new Date(item.expires_at).getTime() / 1000);
-    const host = item.site === "finance-patched" ? "^patched\\.localhost(?::8080)?$" : "^(?:localhost|127\\.0\\.0\\.1)(?::8080)?$";
-    lines.push(`SecRule REQUEST_FILENAME "@streq ${item.path}" "id:${110000 + index},phase:1,pass,nolog,t:none,chain,${action}"`);
+    // Tuning is bound to one exact lab Host value. Avoid a regex here: a
+    // malformed or unexpectedly interpreted host expression could make an
+    // exception for one origin affect the other origin.
+    const host = item.site === "finance-patched" ? "patched.localhost" : "localhost";
+    lines.push(`SecRule REQUEST_FILENAME "@streq ${item.path}" "id:${110000 + index},phase:1,pass,nolog,t:none,chain"`);
     lines.push(`SecRule REQUEST_METHOD "@streq ${item.method}" "t:none,chain"`);
-    lines.push(`SecRule REQUEST_HEADERS:Host "@rx ${host}" "t:none,t:lowercase,chain"`);
-    lines.push(`SecRule TIME_EPOCH "@lt ${expires}" "t:none"`);
+    lines.push(`SecRule REQUEST_HEADERS:Host "@streq ${host}" "t:none,t:lowercase,chain"`);
+    // ctl is non-disruptive and runs as soon as its own rule matches. Keep it
+    // on the final chain member so path/method/host/expiry all gate the action.
+    lines.push(`SecRule TIME_EPOCH "@lt ${expires}" "t:none,${action}"`);
     index++;
   }
   return `${lines.join("\n")}\n`;

@@ -23,7 +23,7 @@ flowchart LR
   FB --> ES[(Elasticsearch)] --> K[Kibana · Discover/Dashboard/Alerts]
 ```
 
-HAProxy luôn ghi ID request và tuyến. WAF policy handler đọc và khôi phục body trong giới hạn 10 MiB, áp dụng geo/rate/anomaly fixture, đặt các header policy nội bộ, rồi gọi Coraza. Coraza kiểm tra CRS; rule lab chuyển engine request sang DetectionOnly khi policy chọn chế độ đó. Ngoại lệ 942100 tại `/api/lab/search` là công tắc fixture cũ; portal cho phép tạo ngoại lệ theo Host, rule ID, method, route và target. Request qua CRS mới đến Next.js. Host `direct.localhost` chọn upstream gốc để baseline; failover tự động là backup server ở HAProxy.
+HAProxy ghi ID request và phân loại `lab.route` từ server thực sự được chọn tại lúc ghi access log (`srv_name` → `edge/route.map`), không suy ra từ trạng thái health-check trước lúc chọn server. Cả Host `direct.localhost` (`finance_direct`/`finance`) và failover (`finance_waf_with_fallback`/`finance-fallback`) mang route `bypass`; backend/server phân biệt baseline chủ động với failover. `localhost` đi qua `finance_waf_with_fallback` tới `waf` khi WAF khỏe; `patched.localhost` đi qua `finance_patched_waf` tới `waf`. Trường route là `unknown` nếu HAProxy không chọn được server, thay vì gán nhãn suy đoán. WAF policy handler đọc và khôi phục body trong giới hạn 10 MiB, áp dụng geo/rate/anomaly fixture, đặt các header policy nội bộ, rồi gọi Coraza. Coraza kiểm tra CRS; rule lab chuyển engine request sang DetectionOnly khi policy chọn chế độ đó. Ngoại lệ 942100 tại `/api/lab/search` là công tắc fixture cũ; portal cho phép tạo ngoại lệ theo Host, rule ID, method, route và target. Request qua CRS mới đến Next.js.
 
 ## Policy runtime và rule Coraza
 

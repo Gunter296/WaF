@@ -1,0 +1,100 @@
+id: waf-lab-positive-security-policy
+
+info:
+  name: WAF Lab - positive security allowlist fixture
+  author: waf-lab
+  severity: info
+  description: Compares one allowed JSON request with URL, method, content type, parameter, file type, and malformed JSON denials.
+  tags: positive-security,regression,waf-lab
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}/api/lab/positive"
+    headers:
+      Content-Type: application/json
+    body: '{"action":"lookup","reference":"LAB-1001","filename":"statement.pdf"}'
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200]
+      - type: word
+        part: body
+        words: ["LAB_POSITIVE_ALLOWED"]
+
+  - method: POST
+    path:
+      - "{{BaseURL}}/api/lab/positive/extra"
+    headers:
+      Content-Type: application/json
+    body: '{"action":"lookup","reference":"LAB-1001","filename":"statement.pdf"}'
+    matchers:
+      - type: status
+        status: [403]
+
+  - method: GET
+    path:
+      - "{{BaseURL}}/api/lab/positive"
+    matchers:
+      - type: status
+        status: [403]
+
+  - method: POST
+    path:
+      - "{{BaseURL}}/api/lab/positive"
+    headers:
+      Content-Type: text/plain
+    body: '{"action":"lookup","reference":"LAB-1001","filename":"statement.pdf"}'
+    matchers:
+      - type: status
+        status: [403]
+
+  - method: POST
+    path:
+      - "{{BaseURL}}/api/lab/positive"
+    headers:
+      Content-Type: application/json
+    body: '{"action":"lookup","reference":"LAB-1001","filename":"statement.exe"}'
+    matchers:
+      - type: status
+        status: [403]
+
+  - method: POST
+    path:
+      - "{{BaseURL}}/api/lab/positive"
+    headers:
+      Content-Type: application/json
+    body: '{"action":"lookup","reference":"LAB-1001","filename":"statement.pdf","extra":"x"}'
+    matchers:
+      - type: status
+        status: [403]
+
+  - method: POST
+    path:
+      - "{{BaseURL}}/api/lab/positive"
+    headers:
+      Content-Type: application/json
+    body: '{"action":"transfer","reference":"LAB-1001","filename":"statement.pdf"}'
+    matchers:
+      - type: status
+        status: [403]
+
+  - method: POST
+    path:
+      - "{{BaseURL}}/api/lab/positive"
+    headers:
+      Content-Type: application/json
+    body: '{"action":"lookup","reference":"LAB-9999","filename":"statement.pdf"}'
+    matchers:
+      - type: status
+        status: [403]
+
+  - method: POST
+    path:
+      - "{{BaseURL}}/api/lab/positive"
+    headers:
+      Content-Type: application/json
+    body: '{"action":'
+    matchers:
+      - type: status
+        status: [400]
