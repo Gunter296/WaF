@@ -1,7 +1,7 @@
 // Dependency-free visual preview. No proxy, database writes, or WAF calls.
 import http from 'node:http';
 import {readFile} from 'node:fs/promises';
-const assets = {'/':'index.html','/index.html':'index.html','/app.js':'app.js','/demo.js':'demo.js','/styles.css':'styles.css'};
+const assets = {'/':'index.html','/index.html':'index.html','/app.js':'app.js','/log-investigation.mjs':'log-investigation.mjs','/demo.js':'demo.js','/styles.css':'styles.css'};
 const mime = {html:'text/html; charset=utf-8',js:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8'};
 http.createServer(async(req,res)=>{
   const url=new URL(req.url,'http://127.0.0.1');

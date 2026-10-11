@@ -23,7 +23,7 @@ flowchart LR
   FB --> ES[(Elasticsearch)] --> K[Kibana · Discover/Dashboard/Alerts]
 ```
 
-HAProxy ghi ID request và phân loại `lab.route` từ server thực sự được chọn tại lúc ghi access log (`srv_name` → `edge/route.map`), không suy ra từ trạng thái health-check trước lúc chọn server. Cả Host `direct.localhost` (`finance_direct`/`finance`) và failover (`finance_waf_with_fallback`/`finance-fallback`) mang route `bypass`; backend/server phân biệt baseline chủ động với failover. `localhost` đi qua `finance_waf_with_fallback` tới `waf` khi WAF khỏe; `patched.localhost` đi qua `finance_patched_waf` tới `waf`. Trường route là `unknown` nếu HAProxy không chọn được server, thay vì gán nhãn suy đoán. WAF policy handler đọc và khôi phục body trong giới hạn 10 MiB, áp dụng geo/rate/anomaly fixture, đặt các header policy nội bộ, rồi gọi Coraza. Coraza kiểm tra CRS; rule lab chuyển engine request sang DetectionOnly khi policy chọn chế độ đó. Ngoại lệ 942100 tại `/api/lab/search` là công tắc fixture cũ; portal cho phép tạo ngoại lệ theo Host, rule ID, method, route và target. Request qua CRS mới đến Next.js.
+HAProxy ghi ID request và phân loại `lab.route` từ server thực sự được chọn tại lúc ghi access log (`srv_name` → `edge/route.map`), không suy ra từ trạng thái health-check trước lúc chọn server. Cả Host `direct.localhost` (`finance_direct`/`finance`) và failover (`finance_waf_with_fallback`/`finance-fallback`) mang route `bypass`; backend/server phân biệt baseline chủ động với failover. `localhost` đi qua `finance_waf_with_fallback` tới `waf` khi WAF khỏe; `patched.localhost` đi qua `finance_patched_waf` tới `waf`. Trường route là `unknown` nếu HAProxy không chọn được server, thay vì gán nhãn suy đoán. WAF policy handler đọc và khôi phục body trong giới hạn 10 MiB, áp dụng geo/rate/anomaly fixture, đặt các header policy nội bộ, rồi gọi Coraza. Coraza kiểm tra CRS; rule lab chuyển engine request sang DetectionOnly khi policy chọn chế độ đó. Portal hỗ trợ ngoại lệ theo Host, rule ID, method, route và target; ca tuning tài chính mới là `POST /api/transactions/reconcile/search` với target `ARGS:expression`. Rule ID phải lấy từ bằng chứng audit runtime, không giả định trước. Request qua CRS mới đến Next.js.
 
 ## Policy runtime và rule Coraza
 
@@ -35,7 +35,7 @@ Bot detection nằm trong `lab/waf/policy-module/policy.go`. Module Go dùng `gi
 | --- | --- | --- |
 | `runtime/policy/policy.json` | Giá trị điều khiển: chế độ, PL, bật virtual patch/ngoại lệ, geo, rate và hành vi. IP/CIDR vẫn được lưu cùng policy nhưng portal sinh rule Coraza riêng. | Đổi trong portal; portal lưu bản chính ở PostgreSQL rồi xuất JSON. |
 | `runtime/tuning/ip-policy.conf` | Rule `@ipMatch` do portal sinh từ danh sách IP/CIDR; Coraza chặn denylist và IP ngoài allowlist, ghi mã quốc gia vào logdata. | Đổi trong portal; portal validate rồi reload Caddy. |
-| `waf/config/lab-rules.conf` | Các `SecRule` tĩnh mà Coraza thực thi: đọc header nội bộ, đặt PL, thêm ngoại lệ fixture và chặn hai route CVE. | Được mount chỉ đọc; sửa source, kiểm tra cấu hình và reload Caddy. |
+| `waf/config/lab-rules.conf` | Các `SecRule` tĩnh mà Coraza thực thi: đọc header nội bộ, đặt PL và giữ policy/fixture của lab. | Được mount chỉ đọc; sửa source, kiểm tra cấu hình và reload Caddy. |
 | `waf/config/coraza.conf` | Giới hạn request body, audit log và debug log của Coraza. | Được mount chỉ đọc; sửa source, kiểm tra cấu hình và reload Caddy. |
 | `runtime/tuning/tuning.conf` | Các ngoại lệ CRS có phạm vi hẹp được portal sinh từ policy đã kiểm tra. Coraza nạp trước CRS. | Đổi trong portal mặc định `/advanced` hoặc giao diện mới `#tuning`; portal reload Caddy, có rollback nếu reload lỗi. |
 
@@ -64,7 +64,7 @@ Portal mặc định trong `lab/portal/` phục vụ `/advanced` bằng `portal/
 - `.gitignore`: giữ lại các `.gitkeep`, bỏ log/kết quả scan được sinh lúc chạy.
 - `edge/`: cấu hình HAProxy và các tuyến đầu vào.
 - `waf/`: Caddy, Coraza/CRS và module policy riêng của lab.
-- `finance/`: ứng dụng Next.js và các fixture dữ liệu giả.
+- `finance/`: ứng dụng Next.js, luồng nghiệp vụ finance giả, migration/seed PostgreSQL và fixture marker cũ tách riêng.
 - `portal/`: giao diện policy và API cấu hình WAF.
 - `canary/`: máy đích nội bộ chỉ trả marker SSRF giả.
 - `observability/`: cấu hình thu thập log.
@@ -79,28 +79,33 @@ Portal mặc định trong `lab/portal/` phục vụ `/advanced` bằng `portal/
 - `waf/policy-module/go.mod`: module Go và dependency Caddy.
 - `waf/policy-module/policy.go`: handler policy runtime, bộ đếm hành vi trong bộ nhớ, geo fixture/GeoIP MMDB và log sự kiện; chuẩn hóa IP client từ HAProxy cho Coraza và xóa header điều khiển do client gửi.
 - `geoip/`: thư mục mount chỉ đọc cho `GeoLite2-Country.mmdb` tùy chọn; database không commit, thiếu database thì quốc gia public là `ZZ`.
-- `finance/Dockerfile`: build hai image từ cùng source với phiên bản Next.js khác nhau; app chỉ nối frontend và log network, không nối PostgreSQL portal. Tìm kiếm hiện dùng mảng giao dịch tĩnh và regex trả marker `LAB_SQLI_MARKER`, nên đây là ca mô phỏng, chưa phải SQL injection vào DB. Muốn kiểm thử lỗi truy vấn SQL thật cần thêm database fixture riêng cho finance và endpoint thực sự ghép input vào truy vấn.
+- `finance/Dockerfile`: build hai biến thể vulnerable/patched từ cùng source; mỗi ứng dụng kết nối PostgreSQL lab cho dữ liệu tài chính giả. Gỡ rewrite SSRF theo Host/path do request kiểm soát; khác biệt phiên bản Next.js vẫn cần xác minh bằng build/runtime trước khi dùng như bằng chứng CVE.
 - `finance/package.json`: Next.js/React/TypeScript dependencies và lệnh build/start.
-- `finance/next.config.mjs`: một locale và rewrite canary để kiểm thử CVE.
+- `finance/next.config.mjs`: cấu hình locale; không còn rewrite canary.
 - `finance/tsconfig.json`, `finance/next-env.d.ts`: cấu hình TypeScript/Next.js.
-- `finance/proxy.ts`: middleware/proxy fixture kiểm tra quyền demo.
+- `finance/proxy.ts`: lớp proxy không cấp quyền; route/page xác thực session PostgreSQL phía server.
 - `finance/.dockerignore`: loại node_modules, `.next`, log và file môi trường khỏi image build context.
 - `finance/app/layout.tsx`, `finance/app/styles.css`: shell và thiết kế chung.
 - `finance/app/page.tsx`: landing page ngân hàng giả.
 - `finance/app/login/page.tsx`: form login demo.
-- `finance/app/dashboard/page.tsx`: số dư và giao dịch seed tĩnh.
-- `finance/app/transfer/page.tsx`: chuyển khoản chỉ đổi trạng thái giao diện.
-- `finance/app/account/private/page.tsx`: marker fixture middleware bypass.
-- `finance/app/lab/page.tsx`: danh sách endpoint lab.
+- `finance/app/dashboard/page.tsx`: tổng quan số dư và giao dịch PostgreSQL theo session.
+- `finance/app/admin/page.tsx`: trang server-only cho role `admin`, hiển thị tất cả tài khoản và giao dịch của lab.
+- `finance/app/transfer/page.tsx`: chuyển khoản giả trong transaction DB, có khóa số dư và idempotency.
+- `finance/app/account/private/page.tsx`: trang tài khoản chỉ dành cho session hợp lệ.
+- `finance/app/transactions/[id]/page.tsx`: chi tiết giao dịch; truy vấn luôn giới hạn theo account.
+- `finance/app/lab/page.tsx`: điều hướng khỏi trang fixture cũ.
 - `finance/app/healthz/route.ts`: endpoint health của ứng dụng.
-- `finance/app/api/lab/search/route.ts`: marker SQLi mô phỏng, không kết nối DB.
+- `finance/app/api/transactions/reconcile/search/route.ts`: parser cú pháp giới hạn và truy vấn bind parameter theo account đã xác thực.
 - `finance/app/api/lab/xss/route.ts`: endpoint phản chiếu HTML có nhãn lab.
 - `finance/app/api/lab/documents/[id]/route.ts`: chứng từ giả để minh họa IDOR.
 - `finance/app/api/lab/file/route.ts`: marker path traversal ảo, không đọc host file.
 - `finance/app/api/lab/upload/route.ts`: upload check mô phỏng.
-- `finance/app/api/lab/login/route.ts`: login demo và event thất bại.
-- `finance/app/api/lab/transfer/route.ts`: endpoint chuyển khoản giả, trả marker CSRF mà không đổi dữ liệu.
-- `finance/lib/log.ts`: ghi JSONL app log kèm `http.request.id`.
+- `finance/app/api/auth/`: đăng nhập server-side, session ngẫu nhiên lưu digest, logout và cookie HttpOnly.
+- `finance/migrations/002_account_roles.sql`: thêm role `user`/`admin`; trang và dữ liệu quản trị kiểm tra role từ session server.
+- `finance/app/api/transfers/route.ts`: cập nhật debit/credit và ledger trong transaction PostgreSQL.
+- `finance/lib/log.ts`: JSONL app log có request ID, account ID giả lập, route, outcome và policy version; không ghi credential/session/filter nguyên văn.
+- `finance/migrations/`, `finance/scripts/`: migration có khóa lặp lại an toàn và seed dữ liệu demo không reset số dư.
+- `finance/tests/`: parser, integration DB/API và kịch bản edge/WAF; kiểm thử tích hợp cần service tương ứng đang chạy.
 - `portal/Dockerfile`: đóng gói portal bằng Node.
 - `portal/package.json`: ghim package pg dùng kết nối PostgreSQL.
 - `portal/server.mjs`: API portal, validation, lưu policy/audit/ứng viên learning vào PostgreSQL, xuất policy JSON và sinh ngoại lệ Coraza; điều kiện automation và rollback.
@@ -117,8 +122,7 @@ Portal mặc định trong `lab/portal/` phục vụ `/advanced` bằng `portal/
 - `runtime/tuning/tuning.conf`: file SecRule do portal sinh, mount chỉ đọc vào WAF.
 - `observability/filebeat.yml`: input JSONL và UDP; output Elasticsearch.
 - `canary/default.conf`, `canary/marker.txt`: Nginx canary nội bộ, chỉ trả marker giả.
-- `nuclei-templates/cve-2026-64642-middleware-bypass.yaml`: xác nhận marker private page.
-- `nuclei-templates/cve-2026-64645-ssrf-canary.yaml`: xác nhận response marker từ canary nội bộ.
+- `nuclei-templates/cve-2026-64642-middleware-bypass.yaml`, `cve-2026-64645-ssrf-canary.yaml`: template lịch sử; fixture tương ứng đã gỡ và không phải ca xác minh hiện tại.
 - `nuclei-templates/simulated-sqli.yaml`, `simulated-xss.yaml`, `simulated-idor.yaml`, `simulated-path.yaml`, `simulated-csrf.yaml`, `simulated-upload.yaml`: probe fixture giả, không phải CVE.
 - `nuclei-templates/behavior-login-burst.yaml`: sáu login giả để kích hoạt policy đăng nhập.
 - `nuclei-templates/behavior-rate-limit.yaml`: burst tối đa 35 request cho rate limit; chạy riêng.

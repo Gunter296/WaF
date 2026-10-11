@@ -1,9 +1,11 @@
 import { extractCandidates, ratesFromBuckets } from "./learning.mjs";
+import { createHash } from "node:crypto";
 
 const es = process.env.ELASTICSEARCH_URL || "http://elasticsearch:9200";
 const portal = process.env.PORTAL_URL || "http://portal:8090";
 const token = process.env.LAB_AUTOMATION_TOKEN || "local-learning-worker-token";
 const period = Math.max(15, Number(process.env.POLL_SECONDS) || 60) * 1000;
+let lastLearningDigest = "";
 
 async function jsonRequest(url, body, headers = {}) {
   const response = await fetch(url, { method: body === undefined ? "GET" : "POST", headers: { "content-type": "application/json", ...headers },
@@ -24,7 +26,18 @@ async function tick() {
   const hits = audit.hits?.hits || [];
   const candidates = extractCandidates(hits.map((hit) => hit._source), Number(policy.blocking_pl || 1));
   const truncated = Number(audit.hits?.total?.value || 0) > hits.length || candidates.length > 100;
-  if (candidates.length) await jsonRequest(`${portal}/api/learning`, candidates.slice(0, 100), { "x-lab-automation-token": token });
+  const learningBatch = candidates.slice(0, 100);
+  const digest = createHash("sha256").update(JSON.stringify(learningBatch.map((item) => ({
+    ...item, sample_request_ids: [...item.sample_request_ids].sort()
+  })).sort((a, b) => a.key.localeCompare(b.key)))).digest("hex");
+  let learningSubmitted = false;
+  let learningChanged = 0;
+  if (learningBatch.length && digest !== lastLearningDigest) {
+    const update = await jsonRequest(`${portal}/api/learning`, learningBatch, { "x-lab-automation-token": token });
+    learningSubmitted = true;
+    learningChanged = Number(update.changed || 0);
+    lastLearningDigest = digest;
+  }
 
   const accessFilter = { term: { "event.dataset": "haproxy.access" } };
   const routeFilter = { term: { "lab.route": "waf" } };
@@ -43,7 +56,8 @@ async function tick() {
     request_count_7d: Number(sevenDays.hits?.total?.value || 0), first_seen: first.aggregations?.first_seen?.value_as_string,
     open_severe: blockers.open_severe || truncated, ...rates
   }, { "x-lab-automation-token": token });
-  console.log(JSON.stringify({ time: new Date().toISOString(), candidates: candidates.length, truncated, metrics: rates, result }));
+  console.log(JSON.stringify({ time: new Date().toISOString(), candidates: candidates.length,
+    learning_submitted: learningSubmitted, learning_changed: learningChanged, truncated, metrics: rates, result }));
 }
 
 for (;;) {

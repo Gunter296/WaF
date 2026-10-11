@@ -11,7 +11,10 @@ Repo thử nghiệm Coraza + OWASP CRS và lab website tài chính giả lập. 
 
 ## Tài liệu
 
+- [Trung tâm tài liệu WaF](docs/README.md)
 - [Cách chạy và kiểm thử](lab/README.md)
+- [Ứng dụng tài chính giả lập](docs/finance-application.md)
+- [Hướng dẫn quản trị ca tuning tài chính](docs/finance-tuning-admin.md)
 - [Cấu trúc file, vai trò thư mục và luồng mã nguồn](docs/lab-structure.md)
 - [Quản trị rule tuning, learning và automation](docs/learning-tuning.md)
 - [Đề xuất cho cấu hình gốc (chỉ tài liệu)](docs/de-xuat-cau-hinh-goc.md)

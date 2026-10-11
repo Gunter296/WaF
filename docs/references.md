@@ -2,13 +2,13 @@
 
 Các tài liệu dưới đây dùng để chọn phạm vi lab, kiểm tra phiên bản và giải thích giới hạn của từng lớp. Phiên bản phụ thuộc được ghim trong `lab/`; không tự động đổi theo các trang tham khảo.
 
-## Next.js và các CVE trong lab
+## Next.js và CVE templates lưu trữ
 
 - [CVE-2026-64642 / GHSA-6gpp-xcg3-4w24](https://github.com/vercel/next.js/security/advisories/GHSA-6gpp-xcg3-4w24): điều kiện App Router, Turbopack và một locale; advisory khuyên kiểm tra quyền trong đường xử lý dữ liệu phía server.
 - [Bản sửa CVE-2026-64642, PR #96014](https://github.com/vercel/next.js/pull/96014): thay đổi bộ khớp middleware/proxy với i18n một locale.
 - [CVE-2026-64645 / GHSA-p9j2-gv94-2wf4](https://github.com/vercel/next.js/security/advisories/GHSA-p9j2-gv94-2wf4): SSRF khi rewrite/redirect tạo hostname đích từ dữ liệu do request kiểm soát; lab chỉ truy cập canary nội bộ.
 
-Hai CVE được chốt trong plan và ghim Next.js 16.2.10/16.2.11. Template chỉ báo khi marker fixture xuất hiện; bản build và probe cần được chạy thực tế trước khi gọi là tái hiện thành công.
+Các advisory là nguồn tham khảo cho template lịch sử. Finance hiện đã gỡ rewrite SSRF theo request và bỏ cơ chế cookie demo tĩnh; templates cũ không được xem là ca đang chạy. Không kết luận trạng thái CVE từ version string hoặc từ nội dung template.
 
 ## WAF, hành vi và failover
 
@@ -32,4 +32,4 @@ Hai CVE được chốt trong plan và ghim Next.js 16.2.10/16.2.11. Template ch
 
 ## Diễn giải phạm vi
 
-Các endpoint SQLi, XSS, IDOR, CSRF, path, upload, đăng nhập và lỗi nghiệp vụ là fixture mô phỏng. Chúng không phải CVE, không đọc file host, không gọi dịch vụ thanh toán và chỉ trả dữ liệu giả. Failover đưa request thẳng tới origin trong lab; mọi kết quả ở tuyến `bypass` cần được tách khỏi đánh giá hiệu quả WAF.
+Các endpoint fixture cũ dưới `/api/lab/*` là mô phỏng độc lập, không dùng trong luồng nghiệp vụ tài chính và không được gọi là CVE. Ca tuning đang phát triển là đối soát giao dịch; cần bằng chứng runtime trước khi ghi nhận CRS false positive. Failover đưa request thẳng tới origin trong lab; mọi kết quả ở tuyến `bypass` cần được tách khỏi đánh giá hiệu quả WAF.

@@ -1,6 +1,7 @@
 const METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 const PATH = /^\/[A-Za-z0-9/_ .-]{0,119}$/;
 const TARGET = /^(ARGS|ARGS_GET|ARGS_POST|REQUEST_HEADERS|REQUEST_COOKIES):[A-Za-z0-9_.-]{1,64}$/;
+const HOSTS = new Set(["localhost", "localhost:8080", "patched.localhost", "patched.localhost:8080", "direct.localhost", "direct.localhost:8080"]);
 
 export function normalizeTuning(input, now = new Date(), existingIds = new Set()) {
   if (!Array.isArray(input) || input.length > 40) throw new Error("tuning_rules must contain at most 40 entries");
@@ -9,6 +10,7 @@ export function normalizeTuning(input, now = new Date(), existingIds = new Set()
     const id = String(raw.id || "");
     const ruleId = Number(raw.rule_id);
     const site = String(raw.site || "finance-vulnerable");
+    const host = String(raw.host || (site === "finance-patched" ? "patched.localhost" : "localhost")).toLowerCase();
     const path = String(raw.path || "");
     const method = String(raw.method || "").toUpperCase();
     const scope = String(raw.scope || "target");
@@ -19,6 +21,7 @@ export function normalizeTuning(input, now = new Date(), existingIds = new Set()
     ids.add(id);
     if (!Number.isInteger(ruleId) || ruleId < 900000 || ruleId > 999999) throw new Error("tuning supports CRS rule IDs 900000–999999");
     if (!["finance-vulnerable", "finance-patched"].includes(site)) throw new Error("invalid finance site");
+    if (!HOSTS.has(host)) throw new Error("tuning Host must match an exact local finance Host");
     if (!PATH.test(path) || path === "/" || path.includes("..") || path.includes("//") || path.includes(" ")) throw new Error("tuning path must be an exact safe non-root path");
     if (!METHODS.has(method)) throw new Error("invalid tuning method");
     if (!["target", "rule"].includes(scope)) throw new Error("invalid tuning scope");
@@ -27,7 +30,7 @@ export function normalizeTuning(input, now = new Date(), existingIds = new Set()
     if (reason.length < 5 || reason.length > 200) throw new Error("tuning reason must be 5–200 characters");
     if (!Number.isFinite(expires.getTime()) || expires.getTime() > now.getTime() + 30 * 86400000) throw new Error("tuning expiry must be within 30 days");
     if (expires <= now && !existingIds.has(id)) throw new Error("new tuning expiry must be in the future");
-    return { id, rule_id: ruleId, site, path, method, scope, target: scope === "target" ? target : "", reason, expires_at: expires.toISOString(), enabled: raw.enabled !== false, source: raw.source === "automatic" ? "automatic" : "manual" };
+    return { id, rule_id: ruleId, site: host.startsWith("patched.") ? "finance-patched" : "finance-vulnerable", host, path, method, scope, target: scope === "target" ? target : "", reason, expires_at: expires.toISOString(), enabled: raw.enabled !== false, source: raw.source === "automatic" ? "automatic" : "manual" };
   });
 }
 
@@ -43,7 +46,7 @@ export function renderTuning(rules, now = new Date()) {
     // Tuning is bound to one exact lab Host value. Avoid a regex here: a
     // malformed or unexpectedly interpreted host expression could make an
     // exception for one origin affect the other origin.
-    const host = item.site === "finance-patched" ? "patched.localhost" : "localhost";
+    const host = item.host || (item.site === "finance-patched" ? "patched.localhost" : "localhost");
     lines.push(`SecRule REQUEST_FILENAME "@streq ${item.path}" "id:${110000 + index},phase:1,pass,nolog,t:none,chain"`);
     lines.push(`SecRule REQUEST_METHOD "@streq ${item.method}" "t:none,chain"`);
     lines.push(`SecRule REQUEST_HEADERS:Host "@streq ${host}" "t:none,t:lowercase,chain"`);
@@ -53,4 +56,12 @@ export function renderTuning(rules, now = new Date()) {
     index++;
   }
   return `${lines.join("\n")}\n`;
+}
+
+export function tuningAuditChanges(previous = [], next = []) {
+  const previousById = new Map(previous.map((rule) => [rule.id, rule]));
+  const nextById = new Map(next.map((rule) => [rule.id, rule]));
+  const created = next.filter((rule) => rule.enabled !== false && (!previousById.has(rule.id) || previousById.get(rule.id).enabled === false));
+  const revoked = previous.filter((rule) => rule.enabled !== false && (!nextById.has(rule.id) || nextById.get(rule.id).enabled === false));
+  return { created, revoked };
 }

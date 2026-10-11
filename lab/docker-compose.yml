@@ -70,13 +70,21 @@ services:
     environment:
       LAB_BUILD: vulnerable
       LAB_LOG_FILE: /var/log/lab/finance-vulnerable.jsonl
-      CANARY_URL: http://canary/marker
+      LAB_POLICY_FILE: /etc/waf-lab/policy.json
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: waflab
+      PGUSER: waflab
+      PGPASSWORD: ${LAB_DB_PASSWORD:-local-lab-only}
+      FINANCE_DEMO_PASSWORD: ${FINANCE_DEMO_PASSWORD:-demo1234}
+      FINANCE_ADMIN_PASSWORD: ${FINANCE_ADMIN_PASSWORD:-admin12345}
     expose: ["3000"]
     volumes:
       - ./runtime/logs:/var/log/lab
-    networks: [frontend, logging]
+      - ./runtime/policy:/etc/waf-lab:ro
+    networks: [frontend, logging, appdata]
     depends_on:
-      canary:
+      postgres:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
@@ -94,13 +102,21 @@ services:
     environment:
       LAB_BUILD: patched
       LAB_LOG_FILE: /var/log/lab/finance-patched.jsonl
-      CANARY_URL: http://canary/marker
+      LAB_POLICY_FILE: /etc/waf-lab/policy.json
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: waflab
+      PGUSER: waflab
+      PGPASSWORD: ${LAB_DB_PASSWORD:-local-lab-only}
+      FINANCE_DEMO_PASSWORD: ${FINANCE_DEMO_PASSWORD:-demo1234}
+      FINANCE_ADMIN_PASSWORD: ${FINANCE_ADMIN_PASSWORD:-admin12345}
     expose: ["3000"]
     volumes:
       - ./runtime/logs:/var/log/lab
-    networks: [frontend, logging]
+      - ./runtime/policy:/etc/waf-lab:ro
+    networks: [frontend, logging, appdata]
     depends_on:
-      canary:
+      postgres:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

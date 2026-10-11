@@ -1,8 +1,15 @@
-"use client";
-import { useState } from "react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { Brand } from "../../components/brand";
+import { LoginForm } from "../../components/login-form";
+import { currentAccount } from "../../lib/session";
+import { logPageEvent } from "../../lib/log";
 
-export default function Login() {
-  const [message, setMessage] = useState("");
-  return <main className="login-shell"><Link className="brand" href="/">✦ Northstar <span>DEMO BANK</span></Link><section className="login-card"><p className="eyebrow">TÀI KHOẢN THỰC HÀNH</p><h1>Chào mừng trở lại</h1><p className="muted">Đăng nhập bằng thông tin giả lập bên dưới.</p><form onSubmit={(e) => { e.preventDefault(); document.cookie = "lab-session=demo-session; path=/; SameSite=Lax"; window.location.href = "/dashboard"; }}><label>Email<input type="email" defaultValue="an.demo@northstar.test" required/></label><label>Mật khẩu<input type="password" defaultValue="demo1234" required/></label><button className="primary" type="submit">Đăng nhập an toàn <span>→</span></button></form><p className="demo-creds">DEMO: an.demo@northstar.test · demo1234</p><p className="message">{message}</p></section><p className="login-foot">Local lab · Không sử dụng mật khẩu thật</p></main>;
+export const dynamic = "force-dynamic";
+
+export default async function Login() {
+  const account = await currentAccount();
+  await logPageEvent("/login", "login_page_view", account ? "already_authenticated" : "complete", account?.id);
+  if (account) redirect("/dashboard");
+  return <main className="auth-page"><header><Brand /></header><section className="auth-layout"><div className="auth-aside"><p className="eyebrow">NORTHSTAR DEMO BANK</p><h1>Quản lý tài khoản của bạn.</h1><p>Đăng nhập vào không gian tài chính mô phỏng để xem hoạt động và thử các giao dịch trong lab.</p><Link href="/">Về trang chủ</Link></div><div className="auth-panel"><p className="eyebrow">TÀI KHOẢN DEMO</p><h2>Đăng nhập</h2><p className="auth-intro">Dùng tài khoản được ghi trong hướng dẫn lab.</p><LoginForm /><p className="auth-switch">Chưa có tài khoản? <Link href="/register">Tạo tài khoản demo</Link></p><p className="auth-safety">Thông tin chỉ được xác minh trên máy chủ lab.</p></div></section></main>;
 }

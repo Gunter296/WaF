@@ -1,5 +1,7 @@
 # Hướng dẫn lab WAF tài chính
 
+> Mục lục tài liệu kiến trúc, xử lý request, log và learning: [docs/README.md](../docs/README.md).
+
 ## 1. Phạm vi và yêu cầu
 
 Lab dành cho học tập trên máy cá nhân, chứa endpoint cố ý mô phỏng lỗi. Không dùng dữ liệu, mật khẩu, URL hoặc hệ thống của bên thứ ba. Các cổng được publish chỉ bind `127.0.0.1`; các network trong Compose đều đặt `internal: true`. Docker cần truy cập registry/npm/Go module trong bước pull/build lần đầu; các container lab không có đường ra Internet sau khi chạy.
@@ -13,12 +15,14 @@ Tại thư mục repo:
 ```powershell
 # Tùy chọn: sao chép lab/.env.example thành lab/.env; thêm --env-file lab/.env
 # vào lệnh Compose nếu cần thay giá trị mặc định dùng riêng trong lab.
-docker compose -f lab/docker-compose.yml config
+docker compose -f lab/docker-compose.yml config --quiet
 docker compose -f lab/docker-compose.yml up --build -d
 docker compose -f lab/docker-compose.yml ps
 ```
 
-Mở website `http://127.0.0.1:8080`, portal `http://127.0.0.1:8090`, Kibana `http://127.0.0.1:5601`, Mailpit `http://127.0.0.1:8025`. Đăng nhập demo: `an.demo@northstar.test` / `demo1234`. `patched.localhost` và `direct.localhost` được chọn qua HTTP Host header; script Nuclei bên dưới thiết lập header này.
+Mở website `http://127.0.0.1:8080`, portal `http://127.0.0.1:8090`, Kibana `http://127.0.0.1:5601`, Mailpit `http://127.0.0.1:8025`. Đăng nhập demo: `an.demo@northstar.test` / `demo1234`; tài khoản quản trị finance: `admin@northstar.test` / `admin12345` (trang quản trị tại `/admin`). Đây là thông tin chỉ dùng local lab; xem [hướng dẫn finance](../docs/finance-application.md) để đổi mật khẩu seed. `patched.localhost` và `direct.localhost` được chọn qua HTTP Host header; script Nuclei bên dưới thiết lập header này.
+
+Website tài chính nay đọc tài khoản, số dư và giao dịch từ PostgreSQL. Migration và seed chạy khi service finance khởi động. Xem [hướng dẫn ứng dụng](../docs/finance-application.md) để biết các tài khoản demo và quy trình nghiệp vụ; xem riêng [hướng dẫn admin tuning](../docs/finance-tuning-admin.md) để tái hiện false positive CRS. Giao dịch chỉ cập nhật dữ liệu giả trong lab.
 
 `lab/waf/Caddyfile` và `lab/waf/config/` được mount chỉ đọc vào WAF. Khi sửa rule hoặc directive trên host, áp dụng sau khi kiểm tra:
 
@@ -39,32 +43,22 @@ docker compose -f lab/docker-compose.yml stop
 docker compose -f lab/docker-compose.yml start
 ```
 
-Reset dữ liệu app/policy/log mà vẫn giữ Elasticsearch: xóa volume PostgreSQL và xóa các file dưới `lab/runtime/logs` và `lab/runtime/results` sau khi stack đã dừng. Reset toàn bộ lab, bao gồm chỉ mục Kibana: `docker compose -f lab/docker-compose.yml down -v`. Lệnh `down -v` xóa volume của lab.
+Không xóa volume PostgreSQL để làm mới dữ liệu ứng dụng: migration/seed finance chạy lặp lại an toàn và không reset số dư. Khi cần dọn log/kết quả, chỉ xóa nội dung `lab/runtime/logs` và `lab/runtime/results` sau khi đã dừng các service ghi file. `docker compose down -v` sẽ xóa các volume của lab, gồm cả dữ liệu PostgreSQL và Elasticsearch.
 
 ## 3. Các lượt kiểm thử Nuclei
 
-Scanner chạy bên trong Docker trên network lab. Dùng `scripts/run-nuclei.ps1` để ghi JSONL, toàn bộ raw request/response, manifest phiên bản/chế độ/tuyến và log lượt quét. Script giới hạn target vào ba Host header trong lab, tắt OAST và tự cập nhật template (`-ni`, `-duc`), concurrency 1; rate tối đa 10 request/giây. Request ID nằm trong response raw và dùng để tra ngược Kibana. Các lượt baseline/WAF/vá chỉ chạy CVE/fixture đơn lẻ; template burst chạy riêng.
+Scanner chạy bên trong Docker trên network lab. Dùng `scripts/run-nuclei.ps1` để ghi JSONL, raw request/response, manifest phiên bản/chế độ/tuyến và log lượt quét. Script giới hạn target vào các Host của lab, tắt OAST và tự cập nhật template (`-ni`, `-duc`), concurrency 1; rate tối đa 10 request/giây. Request ID nằm trong response raw và dùng để tra ngược Kibana. Các template CVE cũ còn trong repo chỉ để tham khảo; rewrite SSRF và cookie demo tĩnh đã được gỡ, nên không chạy template đó như bằng chứng CVE. Dùng tài liệu tuning finance để kiểm tra ca nghiệp vụ mới.
 
 ```powershell
-# Baseline direct tới ứng dụng dễ tổn thương (origin)
+# Fixture mô phỏng riêng dưới /api/lab/* (không phải nghiệp vụ tài chính)
 .\lab\scripts\run-nuclei.ps1 -RunName baseline -HostName direct.localhost -WafMode 'N/A' `
-  -Templates @('cve-2026-64642-middleware-bypass.yaml','cve-2026-64645-ssrf-canary.yaml', `
-    'simulated-sqli.yaml','simulated-xss.yaml','simulated-idor.yaml','simulated-path.yaml', `
+  -Templates @('simulated-sqli.yaml','simulated-xss.yaml','simulated-idor.yaml','simulated-path.yaml', `
     'simulated-csrf.yaml','simulated-upload.yaml')
 
-# Qua WAF đến bản Next.js dễ bị ảnh hưởng
+# Cùng fixture qua WAF
 .\lab\scripts\run-nuclei.ps1 -RunName waf-on -HostName localhost -WafMode On `
-  -Templates @('cve-2026-64642-middleware-bypass.yaml','cve-2026-64645-ssrf-canary.yaml', `
-    'simulated-sqli.yaml','simulated-xss.yaml','simulated-idor.yaml','simulated-path.yaml', `
+  -Templates @('simulated-sqli.yaml','simulated-xss.yaml','simulated-idor.yaml','simulated-path.yaml', `
     'simulated-csrf.yaml','simulated-upload.yaml')
-
-# Qua WAF đến bản đã vá
-.\lab\scripts\run-nuclei.ps1 -RunName patched -HostName patched.localhost -WafMode On `
-  -Templates @('cve-2026-64642-middleware-bypass.yaml','cve-2026-64645-ssrf-canary.yaml')
-
-# Chỉ một nhóm template cụ thể
-.\lab\scripts\run-nuclei.ps1 -RunName ssrf-only -HostName localhost -WafMode On `
-  -Templates @('cve-2026-64645-ssrf-canary.yaml') -RateLimit 1
 ```
 
 Vào portal để chuyển `DetectionOnly` hoặc `On`, rồi lặp lại lượt qua WAF. Lượt kiểm tra quốc gia dùng scanner có IP fixture khác:
@@ -125,7 +119,7 @@ http.response.status_code >= 400
 
 Tạo dashboard từ Discover/Lens, nhóm theo `event.dataset`, `event.action`, `rule.id`, `http.response.status_code` và `lab.route`; dùng `http.request.id` để xem cùng request qua các nguồn log. `lab.route=bypass` gồm cả baseline `finance_direct/finance`; để cảnh báo failover riêng, lọc thêm backend `finance_waf_with_fallback` và server `finance-fallback`. Tạo Elasticsearch query alert cho failover, tăng 403/429, lỗi ingest và login thất bại; action email dùng SMTP `mailpit:1025`, rồi kiểm tra hộp thư tại port 8025. Kibana alert kiểm tra theo lịch, còn việc chặn request diễn ra đồng bộ tại WAF.
 
-Portal > Nhật ký truy vấn lịch sử theo ngày và phân trang trực tiếp từ Elasticsearch. Cột `NGÀY / GIỜ` là thời điểm của từng document. Bộ lọc `Nguồn còn lại` gom các dataset chưa nhận diện; tên dataset hoặc file cụ thể vẫn hiện trong cột Nguồn. JSON của log Coraza có trạng thái `portal.correlation.status`: `matched` khi tìm thấy log HAProxy cùng `http.request.id`, `not_found` khi có ID nhưng không có log khớp, hoặc `missing_request_id` khi log WAF thiếu ID. Khi khớp, `portal.correlation.haproxy` có IP client, method, path, HTTP status, route, backend và server; log Coraza vẫn giữ payload, rule và transaction. Hai log gốc vẫn là hai document riêng. Các request `/healthz` bị ẩn khỏi bảng nhật ký; health check không bị tắt.
+Portal > Nhật ký truy vấn lịch sử theo ngày, giờ, phút và phân trang trực tiếp từ Elasticsearch. Cột thời gian là thời điểm của từng document. Bộ lọc `Nguồn còn lại` gom các dataset chưa nhận diện; tên dataset hoặc file cụ thể vẫn hiện trong cột Nguồn. JSON của log Coraza có trạng thái `portal.correlation.status`: `matched` khi tìm thấy log HAProxy cùng `http.request.id`, `not_found` khi có ID nhưng không có log khớp, hoặc `missing_request_id` khi log WAF thiếu ID. Khi khớp, `portal.correlation.haproxy` có IP client, method, path, HTTP status, route, backend và server; log Coraza vẫn giữ payload, rule và transaction. Mode WAF được tìm theo X-Request-ID trong audit cùng request, kể cả khi audit nằm ngoài trang đang xem. Cột trạng thái xử lý lấy quyết định gần nhất từ `lab_audit`. Hai log gốc vẫn là hai document riêng. Các request `/healthz` bị ẩn khỏi bảng nhật ký; health check không bị tắt.
 
 ## 5. Failover và khắc phục lỗi
 

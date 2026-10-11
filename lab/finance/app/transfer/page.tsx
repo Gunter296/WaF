@@ -1,8 +1,20 @@
-"use client";
 import Link from "next/link";
-import { useState } from "react";
+import { redirect } from "next/navigation";
+import { AccountNav } from "../../components/account-nav";
+import { TransferForm } from "../../components/transfer-form";
+import { pool } from "../../lib/db";
+import { currentAccount } from "../../lib/session";
+import { logPageEvent } from "../../lib/log";
 
-export default function Transfer() {
-  const [done, setDone] = useState(false);
-  return <main className="login-shell"><Link className="brand" href="/dashboard">✦ Northstar <span>DEMO BANK</span></Link><section className="login-card"><p className="eyebrow">CHUYỂN KHOẢN MÔ PHỎNG</p><h1>Chuyển tiền</h1><p className="muted">Không có khoản tiền nào được chuyển thật.</p>{done ? <div className="success">✓ Giao dịch demo đã được ghi nhận trong phiên này.<p><Link href="/dashboard">Quay về tài khoản →</Link></p></div> : <form onSubmit={async (e) => { e.preventDefault(); await fetch("/api/lab/transfer", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ recipient: "DEMO-0002", amount: 250000 }) }); setDone(true); }}><label>Người nhận<input defaultValue="Nguyễn An" required/></label><label>Tài khoản nhận<input defaultValue="DEMO-0002" required/></label><label>Số tiền (₫)<input type="number" min="1" max="10000000" defaultValue="250000" required/></label><button className="primary" type="submit">Xác nhận demo <span>→</span></button></form>}<p className="demo-creds">Giao dịch chỉ thay đổi giao diện bài lab, không gọi cổng thanh toán.</p></section></main>;
+export const dynamic = "force-dynamic";
+
+export default async function Transfer() {
+  const account = await currentAccount();
+  if (!account) {
+    await logPageEvent("/transfer", "transfer_page_view", "unauthenticated");
+    redirect("/login");
+  }
+  const { rows } = await pool.query("SELECT id, display_name, account_number, bank_name FROM finance_beneficiaries WHERE account_id=$1 ORDER BY display_name", [account.id]);
+  await logPageEvent("/transfer", "transfer_page_view", "complete", account.id, { beneficiary_count: rows.length });
+  return <main className="shell"><AccountNav name={account.owner_name} role={account.role} /><section className="transfer-page"><Link className="back-link" href="/dashboard">← Tổng quan</Link><TransferForm beneficiaries={rows} /><p className="auth-safety">Đây là giao dịch giả lập. Không có ngân hàng hoặc dịch vụ thanh toán bên ngoài được gọi.</p></section></main>;
 }

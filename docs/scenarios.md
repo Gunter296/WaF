@@ -1,13 +1,15 @@
 # CVE và tình huống kiểm thử
 
-## CVE thật được ghim
+## CVE templates lưu trữ
+
+Các template CVE cũ còn trong repo để giữ lịch sử bài lab; chúng không còn là ca đang chạy. Finance đã bỏ rewrite lấy hostname từ request và proxy hiện không cấp quyền bằng cookie tĩnh. Vì vậy không dùng các template này để kết luận CVE còn tái hiện hoặc đã được vá. Chỉ khôi phục bài CVE riêng sau khi cập nhật fixture, kiểm tra điều kiện advisory và xác minh cả hai image.
 
 | Fixture | Phiên bản dễ bị ảnh hưởng | Bản đối chứng đã vá | Bằng chứng mong đợi |
 | --- | --- | --- | --- |
-| CVE-2026-64642: middleware/proxy bypass với App Router, Turbopack và cấu hình một locale | Next.js 16.2.10 | Next.js 16.2.11 | Nuclei chỉ báo khi response chứa `LAB_PRIVATE_ACCOUNT`; redirect/login page không phải finding. Điều kiện và phiên bản theo [advisory](https://github.com/vercel/next.js/security/advisories/GHSA-6gpp-xcg3-4w24). |
-| CVE-2026-64645: SSRF rewrite với hostname do request kiểm soát | Next.js 16.2.10 | Next.js 16.2.11 | Nuclei cần body `LAB_CANARY_REACHED_ONLY`; HTTP 200 chung không đủ. Build `patched` bỏ rewrite fixture; canary chỉ nằm trong Docker network. Đây là fixture đối chiếu, chưa phải bằng chứng CVE được tái hiện cho tới khi chạy hai build thực tế. [Advisory](https://github.com/vercel/next.js/security/advisories/GHSA-p9j2-gv94-2wf4). |
+| CVE-2026-64642 middleware/proxy bypass | Template và advisory được lưu trữ; luồng finance hiện không cung cấp marker private page theo template cũ. | Chưa là ca kiểm thử khả dụng. |
+| CVE-2026-64645 SSRF rewrite | Rewrite `/lab/ssrf/{host}/{path}` đã bị gỡ; canary không còn được finance gọi từ request. | Chưa là ca kiểm thử khả dụng. |
 
-Hai ca này là fixture phụ thuộc điều kiện framework đã công bố. Chỉ ghi nhận chúng tái hiện khi image vulnerable qua kiểm tra canary/marker và image đã vá không trả marker. Nếu điều kiện i18n/App Router khiến build không hợp lệ hoặc probe không tương thích với release đã ghim, báo “chưa xác minh fixture”, không đổi finding dựa trên fingerprint phiên bản.
+Các advisory vẫn là tài liệu tham khảo, không phải bằng chứng sản phẩm hiện tại còn dễ bị ảnh hưởng. Các template còn sót lại có thể không tương thích với source hiện tại.
 
 ## Ca mô phỏng
 
@@ -31,7 +33,7 @@ Hai ca này là fixture phụ thuộc điều kiện framework đã công bố. 
 
 Chuyển khoản/CSRF dùng API mô phỏng; chỉ trả marker và không thay đổi số dư hoặc gọi dịch vụ thanh toán. IDOR, CSRF và lỗi nghiệp vụ cần xác minh authorization trong ứng dụng. CRS/WAF có thể không xác định quyền sở hữu object hợp lệ.
 
-Portal có tuning CRS 942100 trên duy nhất `/api/lab/search` để người học so sánh false positive/false negative. Không mở rộng ngoại lệ đó sang endpoint khác; log policy và đánh dấu request theo `http.request.id` để đối chiếu.
+Tuning mới dành riêng cho `POST /api/transactions/reconcile/search`, tham parameter `expression`. Rule ID phải được xác nhận từ audit thực tế; không giả định 942100. Quy trình quản trị và bằng chứng bắt buộc được mô tả tại [finance-tuning-admin.md](finance-tuning-admin.md). Fixture `/api/lab/*` là nhóm marker riêng cho bài học cũ, không phải nghiệp vụ tài chính.
 
 ## Cách diễn giải
 

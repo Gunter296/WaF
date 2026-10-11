@@ -4,7 +4,7 @@ import { logEvent } from "../../../../lib/log";
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const name = String(body.name ?? "unnamed");
-  await logEvent(request, "upload_simulation", "extension_only_check", { filename: name });
+  await logEvent(request, "upload_simulation", "extension_only_check", { extension: name.split(".").at(-1)?.toLowerCase().slice(0, 12) || "none" });
   return NextResponse.json({ lab: "SIMULATED_UPLOAD", filename: name, accepted_by_demo: !name.toLowerCase().endsWith(".exe") });
 }
 

@@ -6,6 +6,6 @@ import { logEvent } from "../../../../lib/log";
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const amount = Math.max(0, Math.min(Number(body.amount) || 0, 10_000_000));
-  await logEvent(request, "csrf_simulation", "fake_transfer_accepted", { amount, recipient: String(body.recipient ?? "DEMO") });
+  await logEvent(request, "csrf_simulation", "fake_transfer_accepted", { amount_present: amount > 0, recipient_present: Boolean(body.recipient) });
   return NextResponse.json({ lab: "SIMULATED_CSRF", accepted: true, amount, transaction_id: "LAB-TX-0001" });
 }

@@ -2,10 +2,11 @@ import http from "node:http";
 import { readFile, writeFile, rename, appendFile } from "node:fs/promises";
 import { Pool } from "pg";
 import { randomUUID } from "node:crypto";
-import { normalizeTuning, renderTuning } from "./tuning.mjs";
+import { normalizeTuning, renderTuning, tuningAuditChanges } from "./tuning.mjs";
 import { normalizeIPPolicy, renderIPPolicy } from "./ip-policy.mjs";
 import { promotionDecision, rollbackDecision } from "./automation.mjs";
-import { fetchLogPage } from "./logs.mjs";
+import { fetchLogPage, fetchOverviewTimeline, fetchRequestTrace } from "./logs.mjs";
+import { redactLog, requestIdOf } from "./public/log-investigation.mjs";
 
 const port = Number(process.env.PORT || 8090);
 const policyFile = process.env.POLICY_FILE || "/shared/policy.json";
@@ -47,6 +48,7 @@ async function recentLogs(params) {
 async function ensureStorage() {
   await pool.query("CREATE TABLE IF NOT EXISTS lab_policy (id integer PRIMARY KEY CHECK (id = 1), document jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())");
   await pool.query("CREATE TABLE IF NOT EXISTS lab_audit (id bigserial PRIMARY KEY, action text NOT NULL, document jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now())");
+  await pool.query("CREATE INDEX IF NOT EXISTS lab_audit_review_lookup ON lab_audit ((document->>'request_id'), created_at DESC, id DESC) WHERE action='log_reviewed'");
   await pool.query("CREATE TABLE IF NOT EXISTS lab_learning (key text PRIMARY KEY, document jsonb NOT NULL, status text NOT NULL DEFAULT 'candidate', updated_at timestamptz NOT NULL DEFAULT now())");
   await pool.query("ALTER TABLE lab_learning ADD COLUMN IF NOT EXISTS review_note text NOT NULL DEFAULT ''");
   await pool.query("CREATE TABLE IF NOT EXISTS lab_automation_health (id integer PRIMARY KEY CHECK (id=1), last_seen timestamptz NOT NULL)");
@@ -172,6 +174,12 @@ async function savePolicy(incoming, internalAutomation = null) {
     await client.query("BEGIN");
     await client.query("INSERT INTO lab_policy(id,document) VALUES(1,$1) ON CONFLICT(id) DO UPDATE SET document=EXCLUDED.document,updated_at=now()", [next]);
     await client.query("INSERT INTO lab_audit(action,document) VALUES($1,$2)", ["policy_updated", next]);
+    const changes = tuningAuditChanges(previous.tuning_rules || [], next.tuning_rules || []);
+    for (const rule of changes.created) {
+      const document = { id: rule.id, host: rule.host, method: rule.method, path: rule.path, rule_id: rule.rule_id, target: rule.target, reason: rule.reason, expires_at: rule.expires_at };
+      await client.query("INSERT INTO lab_audit(action,document) VALUES($1,$2)", ["tuning_exception_created", document]);
+    }
+    for (const rule of changes.revoked) await client.query("INSERT INTO lab_audit(action,document) VALUES($1,$2)", ["tuning_exception_revoked", { id: rule.id, host: rule.host || (rule.site === "finance-patched" ? "patched.localhost" : "localhost"), method: rule.method, path: rule.path, rule_id: rule.rule_id, target: rule.target, reason: rule.reason }]);
     if (tuningChanged) {
       await writeTuning(newTuning);
       await writeIPPolicy(newIPPolicy);
@@ -229,6 +237,33 @@ async function learningRows() {
   return rows;
 }
 
+async function latestLogReviews(requestIds) {
+  const ids = [...new Set(requestIds.filter(id => typeof id === "string" && id.length <= 200))];
+  if (!ids.length) return new Map();
+  const { rows } = await pool.query(`SELECT DISTINCT ON (document->>'request_id') document, created_at
+    FROM lab_audit WHERE action='log_reviewed' AND document->>'request_id'=ANY($1::text[])
+    ORDER BY document->>'request_id', created_at DESC, id DESC`, [ids]);
+  return new Map(rows.map(row => [row.document.request_id, { status: row.document.status, note: row.document.note, at: row.created_at }]));
+}
+
+async function attachLogReviews(alerts = []) {
+  const latest = await latestLogReviews(alerts.map(item => item.request_id));
+  return alerts.map(item => ({ ...item, review: latest.get(item.request_id) || { status: "pending", note: "", at: null } }));
+}
+
+async function reviewLogRequest(input) {
+  const requestId = String(input.request_id || "").trim();
+  const status = String(input.status || "");
+  const note = String(input.note || "").trim();
+  if (!/^[A-Za-z0-9:._-]{1,200}$/.test(requestId)) throw new Error("invalid request ID");
+  if (!["needs_review", "resolved", "false_positive"].includes(status)) throw new Error("invalid review status");
+  if (note.length < 3 || note.length > 500) throw new Error("note must be 3–500 characters");
+  const document = { request_id: requestId, status, note, reviewer: "local-admin" };
+  await pool.query("INSERT INTO lab_audit(action,document) VALUES($1,$2)", ["log_reviewed", document]);
+  await log("log_reviewed", { lab: { request_id: requestId, status } });
+  return { request_id: requestId, status, note, at: new Date().toISOString() };
+}
+
 async function hasOpenSevere(policy) {
   const { rows } = await pool.query("SELECT document FROM lab_learning WHERE status IN ('needs_review','confirmed_fp') AND (document->>'severity_syslog' IN ('0','1','2','3') OR document->>'severity' IN ('high','critical'))");
   return rows.some(({ document: item }) => !(policy.tuning_rules || []).some((rule) =>
@@ -239,6 +274,7 @@ async function hasOpenSevere(policy) {
 async function upsertLearning(items) {
   if (!Array.isArray(items) || items.length > 100) throw new Error("invalid learning batch");
   const client = await pool.connect();
+  let changed = 0;
   try {
     await client.query("BEGIN");
     for (const item of items) {
@@ -253,12 +289,14 @@ async function upsertLearning(items) {
         other_serious: item.other_serious === true, estimated_blocks: Number(item.estimated_blocks || 0),
         sample_request_ids: Array.isArray(item.sample_request_ids) ? item.sample_request_ids.slice(0, 5).map(String) : []
       };
-      await client.query("INSERT INTO lab_learning(key,document) VALUES($1,$2) ON CONFLICT(key) DO UPDATE SET document=EXCLUDED.document,updated_at=now()", [key, document]);
+      const result = await client.query("INSERT INTO lab_learning(key,document) VALUES($1,$2) ON CONFLICT(key) DO UPDATE SET document=EXCLUDED.document,updated_at=now() WHERE lab_learning.document IS DISTINCT FROM EXCLUDED.document", [key, document]);
+      changed += result.rowCount;
     }
     await client.query("COMMIT");
   } catch (error) { await client.query("ROLLBACK"); throw error; }
   finally { client.release(); }
-  await log("learning_updated", { lab: { candidates: items.length } });
+  if (changed) await log("learning_updated", { lab: { candidates_changed: changed } });
+  return changed;
 }
 
 async function evaluateAutomation(metrics) {
@@ -322,6 +360,7 @@ const assets = new Map([
   ["/advanced", ["index.html", "text/html; charset=utf-8"]],
   ["/styles.css", ["styles.css", "text/css; charset=utf-8"]],
   ["/app.js", ["app.js", "text/javascript; charset=utf-8"]],
+  ["/log-investigation.mjs", ["log-investigation.mjs", "text/javascript; charset=utf-8"]],
   ["/demo.js", ["demo.js", "text/javascript; charset=utf-8"]]
 ]);
 const server = http.createServer(async (req, res) => {
@@ -334,8 +373,25 @@ const server = http.createServer(async (req, res) => {
       const saved = await serialize(() => savePolicy(incoming)); sendJson(res, 200, saved); return;
     }
     if (req.url === "/api/learning" && req.method === "GET") { sendJson(res, 200, await learningRows()); return; }
+    if (req.url === "/api/overview/logs" && req.method === "GET") {
+      const overview = await fetchOverviewTimeline(elasticsearchUrl);
+      overview.alerts = await attachLogReviews(overview.alerts);
+      sendJson(res, 200, overview); return;
+    }
+    if (req.url === "/api/log-reviews" && req.method === "POST") {
+      requireLocalMutation(req);
+      const review = await serialize(async () => reviewLogRequest(await readJson(req)));
+      sendJson(res, 200, { ok: true, review }); return;
+    }
+    if (new URL(req.url, "http://localhost").pathname === "/api/logs/trace" && req.method === "GET") {
+      const id = new URL(req.url, "http://localhost").searchParams.get("request_id");
+      const trace = await fetchRequestTrace(id, elasticsearchUrl);
+      sendJson(res, 200, { ...trace, items: trace.items.map(row => redactLog(row)) }); return;
+    }
     if (new URL(req.url, "http://localhost").pathname === "/api/logs" && req.method === "GET") {
-      sendJson(res, 200, await recentLogs(new URL(req.url, "http://localhost").searchParams)); return;
+      const page = await recentLogs(new URL(req.url, "http://localhost").searchParams);
+      const reviews = await latestLogReviews(page.items.map(requestIdOf));
+      sendJson(res, 200, { ...page, items: page.items.map(row => redactLog(row)), reviews: Object.fromEntries(reviews) }); return;
     }
     if (req.url === "/api/learning/blockers" && req.method === "GET") {
       sendJson(res, 200, { open_severe: await hasOpenSevere((await currentPolicy()).document) }); return;
@@ -345,7 +401,7 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { worker_last_seen: rows[0]?.last_seen || null, automation: (await currentPolicy()).document.automation }); return;
     }
     if (req.url === "/api/learning" && req.method === "POST") {
-      requireWorker(req); await upsertLearning(await readJson(req)); sendJson(res, 200, { ok: true }); return;
+      requireWorker(req); const changed = await upsertLearning(await readJson(req)); sendJson(res, 200, { ok: true, changed }); return;
     }
     if (req.url === "/api/automation/evaluate" && req.method === "POST") {
       requireWorker(req); const metrics = await readJson(req);

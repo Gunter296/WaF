@@ -6,6 +6,6 @@ export async function POST(request: NextRequest) {
   const email = String(body.email ?? "");
   const password = String(body.password ?? "");
   const success = email === "an.demo@northstar.test" && password === "demo1234";
-  await logEvent(request, "login_simulation", success ? "demo_success" : "demo_failure", { username: email });
+  await logEvent(request, "login_simulation", success ? "demo_success" : "demo_failure", { username_present: Boolean(email) });
   return NextResponse.json({ lab: "SIMULATED_LOGIN", success }, { status: success ? 200 : 401 });
 }
