@@ -47,7 +47,7 @@ flowchart TD
   R -->|localhost| W[Caddy]
   R -->|patched.localhost| W
   W --> M[lab_policy: geo, bot, rate, behavior]
-  M -->|On và action block| B[403 hoặc 429 từ policy]
+  M -->|On và action block| B[403 hoặc 4xx]
   M -->|Cho tiếp hoặc action observe| Z[Coraza và CRS]
   Z -->|DetectionOnly: audit, tiếp tục| A{Host patched?}
   Z -->|On: rule disruptive đạt ngưỡng| X[Coraza ngắt request]
